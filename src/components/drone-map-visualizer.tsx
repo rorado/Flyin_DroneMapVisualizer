@@ -7,6 +7,13 @@ import { parseDroneMap } from "@/lib/parser";
 import { SAMPLE_MAPS, SAMPLE_OPTIONS, SampleKey } from "@/lib/samples";
 import { ParsedConnection, ParsedMap, ParsedNode } from "@/lib/types";
 
+type SvgViewBox = {
+  minX: number;
+  minY: number;
+  width: number;
+  height: number;
+};
+
 function getNodeAccent(node: ParsedNode) {
   if (node.color) {
     return node.color;
@@ -81,6 +88,22 @@ function getNodeDomId(node: ParsedNode) {
   return `${node.role}-${node.lineNumber}-${node.name}`;
 }
 
+function clampPan(
+  pan: { x: number; y: number },
+  zoom: number,
+  box: SvgViewBox,
+) {
+  const visibleWidth = box.width / zoom;
+  const visibleHeight = box.height / zoom;
+  const maxX = Math.max(0, box.width - visibleWidth);
+  const maxY = Math.max(0, box.height - visibleHeight);
+
+  return {
+    x: Math.min(Math.max(pan.x, 0), maxX),
+    y: Math.min(Math.max(pan.y, 0), maxY),
+  };
+}
+
 export default function DroneMapVisualizer() {
   const [draftText, setDraftText] = useState<string>(SAMPLE_MAPS.easy);
   const [appliedText, setAppliedText] = useState<string>(SAMPLE_MAPS.easy);
@@ -91,7 +114,19 @@ export default function DroneMapVisualizer() {
   );
   const [isCopying, setIsCopying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const panPointerRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+  }>({
+    active: false,
+    lastX: 0,
+    lastY: 0,
+  });
 
   const parsed = useMemo(() => parseDroneMap(appliedText), [appliedText]);
   const nodes = useMemo(() => {
@@ -113,6 +148,20 @@ export default function DroneMapVisualizer() {
     );
   }, [parsed]);
   const viewBox = useMemo(() => computeViewBox(nodes), [nodes]);
+  const clampedPan = useMemo(
+    () => clampPan(pan, zoom, viewBox),
+    [pan, zoom, viewBox],
+  );
+  const interactiveViewBox = useMemo(() => {
+    const width = viewBox.width / zoom;
+    const height = viewBox.height / zoom;
+    return {
+      minX: viewBox.minX + clampedPan.x,
+      minY: viewBox.minY + clampedPan.y,
+      width,
+      height,
+    };
+  }, [viewBox, zoom, clampedPan]);
 
   const nodeByName = useMemo(() => {
     const map = new Map<string, ParsedNode>();
@@ -155,6 +204,121 @@ export default function DroneMapVisualizer() {
     setHoveredNode(null);
     setHoveredConnection(null);
   }, [appliedText]);
+
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    panPointerRef.current = { active: false, lastX: 0, lastY: 0 };
+    setIsPanning(false);
+  }, [viewBox.minX, viewBox.minY, viewBox.width, viewBox.height]);
+
+  useEffect(() => {
+    if (clampedPan.x !== pan.x || clampedPan.y !== pan.y) {
+      setPan(clampedPan);
+    }
+  }, [clampedPan, pan.x, pan.y]);
+
+  function handleMapWheel(event: React.WheelEvent<SVGSVGElement>) {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    const zoomFactor = event.deltaY < 0 ? 1.12 : 0.9;
+    const nextZoom = Math.min(6, Math.max(1, zoom * zoomFactor));
+
+    if (nextZoom === zoom) {
+      return;
+    }
+
+    const currentPan = clampPan(pan, zoom, viewBox);
+    const pointerXRatio = Math.min(
+      Math.max((event.clientX - rect.left) / rect.width, 0),
+      1,
+    );
+    const pointerYRatio = Math.min(
+      Math.max((event.clientY - rect.top) / rect.height, 0),
+      1,
+    );
+
+    const currentWidth = viewBox.width / zoom;
+    const currentHeight = viewBox.height / zoom;
+    const worldX = viewBox.minX + currentPan.x + pointerXRatio * currentWidth;
+    const worldY = viewBox.minY + currentPan.y + pointerYRatio * currentHeight;
+
+    const nextWidth = viewBox.width / nextZoom;
+    const nextHeight = viewBox.height / nextZoom;
+    const nextPan = {
+      x: worldX - viewBox.minX - pointerXRatio * nextWidth,
+      y: worldY - viewBox.minY - pointerYRatio * nextHeight,
+    };
+
+    setZoom(nextZoom);
+    setPan(clampPan(nextPan, nextZoom, viewBox));
+  }
+
+  function handleMapPointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+
+    panPointerRef.current = {
+      active: true,
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    setIsPanning(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleMapPointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const drag = panPointerRef.current;
+    if (!drag.active) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    const deltaX = event.clientX - drag.lastX;
+    const deltaY = event.clientY - drag.lastY;
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+
+    const unitsPerPxX = interactiveViewBox.width / rect.width;
+    const unitsPerPxY = interactiveViewBox.height / rect.height;
+
+    setPan((prev) =>
+      clampPan(
+        {
+          x: prev.x - deltaX * unitsPerPxX,
+          y: prev.y - deltaY * unitsPerPxY,
+        },
+        zoom,
+        viewBox,
+      ),
+    );
+  }
+
+  function handleMapPointerEnd(event: React.PointerEvent<SVGSVGElement>) {
+    if (!panPointerRef.current.active) {
+      return;
+    }
+
+    panPointerRef.current.active = false;
+    setIsPanning(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleResetView() {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
 
   async function handleCopyJson() {
     setIsCopying(true);
@@ -423,6 +587,16 @@ export default function DroneMapVisualizer() {
               </div>
 
               <div className="flex flex-wrap gap-2">
+                <span className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-sm font-semibold text-cyan-100">
+                  Zoom {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetView}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                >
+                  Reset view
+                </button>
                 <button
                   type="button"
                   onClick={handleCopyJson}
@@ -446,15 +620,20 @@ export default function DroneMapVisualizer() {
                   ref={svgRef}
                   nodes={nodes}
                   connections={parsed.connections}
-                  viewBox={viewBox}
+                  viewBox={interactiveViewBox}
                   nodeByName={nodeByName}
                   hoveredNode={hoveredNode}
                   hoveredConnection={hoveredConnection}
                   connectedNodeNames={connectedNodeNames}
+                  isPanning={isPanning}
                   onNodeHover={setHoveredNode}
                   onNodeLeave={() => setHoveredNode(null)}
                   onConnectionHover={setHoveredConnection}
                   onConnectionLeave={() => setHoveredConnection(null)}
+                  onMapWheel={handleMapWheel}
+                  onMapPointerDown={handleMapPointerDown}
+                  onMapPointerMove={handleMapPointerMove}
+                  onMapPointerEnd={handleMapPointerEnd}
                 />
 
                 {!hasRenderableMap && (
@@ -504,15 +683,20 @@ export default function DroneMapVisualizer() {
 type MapCanvasProps = {
   nodes: ParsedNode[];
   connections: ParsedConnection[];
-  viewBox: { minX: number; minY: number; width: number; height: number };
+  viewBox: SvgViewBox;
   nodeByName: Map<string, ParsedNode>;
   hoveredNode: string | null;
   hoveredConnection: string | null;
   connectedNodeNames: Set<string> | null;
+  isPanning: boolean;
   onNodeHover: (name: string) => void;
   onNodeLeave: () => void;
   onConnectionHover: (id: string) => void;
   onConnectionLeave: () => void;
+  onMapWheel: (event: React.WheelEvent<SVGSVGElement>) => void;
+  onMapPointerDown: (event: React.PointerEvent<SVGSVGElement>) => void;
+  onMapPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void;
+  onMapPointerEnd: (event: React.PointerEvent<SVGSVGElement>) => void;
 };
 
 const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapCanvas(
@@ -524,10 +708,15 @@ const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapCanvas(
     hoveredNode,
     hoveredConnection,
     connectedNodeNames,
+    isPanning,
     onNodeHover,
     onNodeLeave,
     onConnectionHover,
     onConnectionLeave,
+    onMapWheel,
+    onMapPointerDown,
+    onMapPointerMove,
+    onMapPointerEnd,
   },
   ref,
 ) {
@@ -540,11 +729,17 @@ const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapCanvas(
     <motion.svg
       ref={ref}
       viewBox={`${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`}
-      className="h-full w-full"
+      className={`h-full w-full touch-none ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
       role="img"
       aria-label="Drone map visualization"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
+      onWheel={onMapWheel}
+      onPointerDown={onMapPointerDown}
+      onPointerMove={onMapPointerMove}
+      onPointerUp={onMapPointerEnd}
+      onPointerCancel={onMapPointerEnd}
+      onPointerLeave={onMapPointerEnd}
     >
       <defs>
         <pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse">
