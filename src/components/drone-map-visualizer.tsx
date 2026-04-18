@@ -72,6 +72,9 @@ export default function DroneMapVisualizer() {
   const [hoveredConnection, setHoveredConnection] = useState<string | null>(
     null,
   );
+  const [selectedPathIndex, setSelectedPathIndex] = useState<number | null>(
+    null,
+  );
   const [isCopying, setIsCopying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [zoom, setZoom] = useState(2.5);
@@ -159,27 +162,6 @@ export default function DroneMapVisualizer() {
     return null;
   }, [hoveredConnection, hoveredNode, parsed.connections]);
 
-  const pathFromHoveredToGoal = useMemo(() => {
-    if (!hoveredNode || !parsed.endHub || parsed.connections.length === 0) {
-      return [] as string[];
-    }
-
-    const hoveredNodeObj = nodeByName.get(hoveredNode);
-    if (!hoveredNodeObj) {
-      return [];
-    }
-
-    if (hoveredNodeObj.zone === "blocked") {
-      return [];
-    }
-
-    return findPathBetweenNodes(
-      hoveredNode,
-      parsed.endHub.name,
-      parsed.connections,
-    );
-  }, [hoveredNode, parsed.endHub, parsed.connections, nodeByName]);
-
   const allPathsFromHoveredToGoal = useMemo(() => {
     if (!parsed.startHub || !parsed.endHub || parsed.connections.length === 0) {
       return [] as string[][];
@@ -192,6 +174,16 @@ export default function DroneMapVisualizer() {
       100,
     );
   }, [parsed.startHub, parsed.endHub, parsed.connections]);
+
+  const pathFromHoveredToGoal = useMemo(() => {
+    if (
+      selectedPathIndex === null ||
+      selectedPathIndex >= allPathsFromHoveredToGoal.length
+    ) {
+      return [] as string[];
+    }
+    return allPathsFromHoveredToGoal[selectedPathIndex];
+  }, [selectedPathIndex, allPathsFromHoveredToGoal]);
 
   const pathNodeNames = useMemo(() => {
     if (pathFromHoveredToGoal.length === 0) {
@@ -262,6 +254,7 @@ export default function DroneMapVisualizer() {
   useEffect(() => {
     setHoveredNode(null);
     setHoveredConnection(null);
+    setSelectedPathIndex(null);
   }, [appliedText]);
 
   useEffect(() => {
@@ -663,7 +656,14 @@ export default function DroneMapVisualizer() {
 
             <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
               <div className="flex items-center justify-between gap-3 mb-4">
-                <h3 className="font-semibold text-white">All Possible Paths</h3>
+                <div>
+                  <h3 className="font-semibold text-white">
+                    All Possible Paths
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Click to highlight, click again to hide
+                  </p>
+                </div>
                 <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300">
                   {allPathsFromHoveredToGoal.length} paths
                 </span>
@@ -676,17 +676,34 @@ export default function DroneMapVisualizer() {
                   </div>
                 ) : (
                   allPathsFromHoveredToGoal.map((path, idx) => (
-                    <div
+                    <button
                       key={idx}
-                      className="rounded-lg border border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 px-3 py-2 text-xs font-mono text-slate-100 break-words"
+                      onClick={() =>
+                        setSelectedPathIndex(
+                          selectedPathIndex === idx ? null : idx,
+                        )
+                      }
+                      className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono break-words transition ${
+                        selectedPathIndex === idx
+                          ? "border-emerald-400 bg-emerald-400/20 text-emerald-100 ring-1 ring-emerald-400"
+                          : "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 text-slate-100 hover:bg-emerald-400/15 hover:border-emerald-400/50"
+                      }`}
                     >
-                      <div className="font-semibold text-emerald-300 mb-1">
+                      <div
+                        className={`font-semibold mb-1 ${selectedPathIndex === idx ? "text-emerald-300" : "text-emerald-300"}`}
+                      >
                         Path {idx + 1}
                       </div>
                       <div className="flex flex-wrap items-center gap-1 whitespace-normal">
                         {path.map((zone, i) => (
                           <div key={i} className="flex items-center gap-1">
-                            <span className="rounded px-2 py-0.5 bg-slate-800 text-cyan-200 font-medium">
+                            <span
+                              className={`rounded px-2 py-0.5 font-medium ${
+                                selectedPathIndex === idx
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-slate-800 text-cyan-200"
+                              }`}
+                            >
                               {zone}
                             </span>
                             {i < path.length - 1 && (
@@ -697,7 +714,7 @@ export default function DroneMapVisualizer() {
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -715,7 +732,9 @@ export default function DroneMapVisualizer() {
                   Interactive map
                 </h2>
                 <p className="text-sm text-slate-400">
-                  Hover nodes and links to highlight related paths.
+                  {selectedPathIndex !== null
+                    ? `Path ${selectedPathIndex + 1} highlighted`
+                    : "Click a path to toggle highlight."}
                 </p>
               </div>
 
