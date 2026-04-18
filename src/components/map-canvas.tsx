@@ -16,6 +16,7 @@ export type MapCanvasProps = {
   connections: ParsedConnection[];
   viewBox: SvgViewBox;
   nodeByName: Map<string, ParsedNode>;
+  coordinateScale?: number;
   hoveredNode: string | null;
   hoveredConnection: string | null;
   connectedNodeNames: Set<string> | null;
@@ -39,6 +40,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       connections,
       viewBox,
       nodeByName,
+      coordinateScale = 1,
       hoveredNode,
       hoveredConnection,
       connectedNodeNames,
@@ -56,10 +58,17 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
     },
     ref,
   ) {
-    const xStep = Math.max(viewBox.width / 4, 1);
-    const yStep = Math.max(viewBox.height / 4, 1);
-    const xMarks = [0, 1, 2, 3, 4].map((index) => viewBox.minX + index * xStep);
-    const yMarks = [0, 1, 2, 3, 4].map((index) => viewBox.minY + index * yStep);
+    const xStep = Math.max(viewBox.width / 3, 1);
+    const yStep = Math.max(viewBox.height / 3, 1);
+    const xMarks = [0, 1, 2, 3].map((index) => viewBox.minX + index * xStep);
+    const yMarks = [0, 1, 2, 3].map((index) => viewBox.minY + index * yStep);
+    const hoveredNodeDetails = hoveredNode ? nodeByName.get(hoveredNode) : null;
+    const hoveredDisplayX = hoveredNodeDetails
+      ? hoveredNodeDetails.x / coordinateScale
+      : 0;
+    const hoveredDisplayY = hoveredNodeDetails
+      ? hoveredNodeDetails.y / coordinateScale
+      : 0;
 
     return (
       <motion.svg
@@ -406,54 +415,42 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     </text>
                   </g>
                 ) : null}
-
-                <g pointerEvents="none" textAnchor="middle">
-                  <text
-                    x={node.x}
-                    y={node.y - radius - 0.25}
-                    fill="#f8fafc"
-                    fontSize="0.22"
-                    fontWeight={700}
-                  >
-                    {node.role === "start"
-                      ? "START"
-                      : node.role === "goal"
-                        ? "GOAL"
-                        : "HUB"}
-                  </text>
-                  <text
-                    x={node.x}
-                    y={node.y + radius + 0.28}
-                    fill="#f8fafc"
-                    fontSize="0.18"
-                    fontWeight={700}
-                  >
-                    {node.name}
-                  </text>
-                  <text
-                    x={node.x}
-                    y={node.y + radius + 0.53}
-                    fill="rgba(226,232,240,0.8)"
-                    fontSize="0.15"
-                  >
-                    ({node.x}, {node.y}) · {node.zone}
-                  </text>
-                  {node.maxDrones && node.maxDrones > 1 ? (
-                    <text
-                      x={node.x}
-                      y={node.y + radius + 0.74}
-                      fill="#a7f3d0"
-                      fontSize="0.15"
-                      fontWeight={600}
-                    >
-                      max drones {node.maxDrones}
-                    </text>
-                  ) : null}
-                </g>
               </motion.g>
             );
           })}
         </motion.g>
+
+        {hoveredNodeDetails ? (
+          <g pointerEvents="none">
+            <rect
+              x={viewBox.minX + 0.5}
+              y={viewBox.minY + 0.5}
+              width={Math.min(12.8, Math.max(10.4, viewBox.width * 0.55))}
+              height={1.55}
+              rx={0.22}
+              fill="rgba(15,23,42,0.86)"
+              stroke="rgba(56,189,248,0.55)"
+              strokeWidth={0.04}
+            />
+            <text
+              x={viewBox.minX + 0.85}
+              y={viewBox.minY + 1.03}
+              fill="#e2e8f0"
+              fontSize="0.24"
+              fontWeight={700}
+            >
+              {`${hoveredNodeDetails.name} (${hoveredNodeDetails.role.toUpperCase()})`}
+            </text>
+            <text
+              x={viewBox.minX + 0.85}
+              y={viewBox.minY + 1.35}
+              fill="rgba(191,219,254,0.95)"
+              fontSize="0.2"
+            >
+              {`Zone: ${hoveredNodeDetails.zone} | Pos: (${hoveredDisplayX}, ${hoveredDisplayY})${hoveredNodeDetails.maxDrones ? ` | Max drones: ${hoveredNodeDetails.maxDrones}` : ""}`}
+            </text>
+          </g>
+        ) : null}
       </motion.svg>
     );
   },

@@ -40,6 +40,29 @@ function serializeParsedMap(parsed: ParsedMap, sourceText: string) {
   };
 }
 
+const MIN_ZOOM = 0.02;
+const MAX_ZOOM = 30;
+const TARGET_CELL_SPACING_PX = 600;
+const COORDINATE_SPACING_FACTOR = 3;
+
+function getZoomForCellSpacing(
+  svgElement: SVGSVGElement | null,
+  viewBox: SvgViewBox,
+) {
+  if (!svgElement) {
+    return 1;
+  }
+
+  const rect = svgElement.getBoundingClientRect();
+  if (rect.width <= 0 || !Number.isFinite(rect.width)) {
+    return 1;
+  }
+
+  // At zoom=1, px/unit is rect.width / viewBox.width. Solve for target spacing.
+  const zoomForTarget = (TARGET_CELL_SPACING_PX * viewBox.width) / rect.width;
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomForTarget));
+}
+
 export default function DroneMapVisualizer() {
   const [draftText, setDraftText] = useState<string>(SAMPLE_MAPS.easy);
   const [appliedText, setAppliedText] = useState<string>(SAMPLE_MAPS.easy);
@@ -65,7 +88,7 @@ export default function DroneMapVisualizer() {
   });
 
   const parsed = useMemo(() => parseDroneMap(appliedText), [appliedText]);
-  const nodes = useMemo(() => {
+  const sourceNodes = useMemo(() => {
     const seen = new Set<string>();
     return [parsed.startHub, ...parsed.hubs, parsed.endHub].filter(
       (node): node is ParsedNode => {
@@ -83,6 +106,15 @@ export default function DroneMapVisualizer() {
       },
     );
   }, [parsed]);
+  const nodes = useMemo(
+    () =>
+      sourceNodes.map((node) => ({
+        ...node,
+        x: node.x * COORDINATE_SPACING_FACTOR,
+        y: node.y * COORDINATE_SPACING_FACTOR,
+      })),
+    [sourceNodes],
+  );
   const viewBox = useMemo(() => computeViewBox(nodes), [nodes]);
   const clampedPan = useMemo(
     () => clampPan(pan, zoom, viewBox),
@@ -216,12 +248,17 @@ export default function DroneMapVisualizer() {
   const summary = useMemo(() => {
     return {
       drones: parsed.nbDrones ?? 0,
-      hubs: nodes.length,
+      hubs: sourceNodes.length,
       connections: parsed.connections.length,
       issueCount: parsed.issues.filter((issue) => issue.severity === "error")
         .length,
     };
-  }, [nodes.length, parsed.connections.length, parsed.issues, parsed.nbDrones]);
+  }, [
+    sourceNodes.length,
+    parsed.connections.length,
+    parsed.issues,
+    parsed.nbDrones,
+  ]);
 
   useEffect(() => {
     setHoveredNode(null);
@@ -229,10 +266,14 @@ export default function DroneMapVisualizer() {
   }, [appliedText]);
 
   useEffect(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    panPointerRef.current = { active: false, lastX: 0, lastY: 0 };
-    setIsPanning(false);
+    const rafId = requestAnimationFrame(() => {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      panPointerRef.current = { active: false, lastX: 0, lastY: 0 };
+      setIsPanning(false);
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, [viewBox.minX, viewBox.minY, viewBox.width, viewBox.height]);
 
   useEffect(() => {
@@ -249,7 +290,7 @@ export default function DroneMapVisualizer() {
     }
 
     const zoomFactor = event.deltaY < 0 ? 1.12 : 0.9;
-    const nextZoom = Math.min(5, Math.max(0.02, zoom * zoomFactor));
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * zoomFactor));
 
     if (nextZoom === zoom) {
       return;
@@ -339,12 +380,12 @@ export default function DroneMapVisualizer() {
   }
 
   function handleZoomIn() {
-    const nextZoom = Math.min(5, zoom * 1.12);
+    const nextZoom = Math.min(MAX_ZOOM, zoom * 1.12);
     setZoom(nextZoom);
   }
 
   function handleZoomOut() {
-    const nextZoom = Math.max(0.02, zoom * 0.9);
+    const nextZoom = Math.max(MIN_ZOOM, zoom * 0.9);
     setZoom(nextZoom);
   }
 
@@ -669,6 +710,7 @@ export default function DroneMapVisualizer() {
                   connections={parsed.connections}
                   viewBox={interactiveViewBox}
                   nodeByName={nodeByName}
+                  coordinateScale={COORDINATE_SPACING_FACTOR}
                   hoveredNode={hoveredNode}
                   hoveredConnection={hoveredConnection}
                   connectedNodeNames={connectedNodeNames}

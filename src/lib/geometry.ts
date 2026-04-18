@@ -11,7 +11,7 @@ export function computeViewBox(
   nodes: ParsedNode[],
   paddingRatio = 0.28,
 ): ViewBox {
-  paddingRatio = 0.8; // Increased from 0.28 for more space
+  paddingRatio = 0.30; // Increased from 0.28 for more space
   if (nodes.length === 0) {
     return { minX: -10, minY: -10, width: 20, height: 20 };
   }
