@@ -9,6 +9,7 @@ import { ParsedMap, ParsedNode } from "@/lib/types";
 import { MapCanvas } from "@/components/map-canvas";
 import {
   clampPan,
+  findPathBetweenNodes,
   getNodeDomId,
   SvgViewBox,
 } from "@/components/map-visualizer-utils";
@@ -124,6 +125,93 @@ export default function DroneMapVisualizer() {
 
     return null;
   }, [hoveredConnection, hoveredNode, parsed.connections]);
+
+  const pathNodeNames = useMemo(() => {
+    if (
+      !hoveredNode ||
+      !parsed.startHub ||
+      !parsed.endHub ||
+      parsed.connections.length === 0
+    ) {
+      return null;
+    }
+
+    // Show path for hub nodes and start node
+    const hoveredNodeObj = nodeByName.get(hoveredNode);
+    if (
+      !hoveredNodeObj ||
+      (hoveredNodeObj.role !== "hub" && hoveredNodeObj.role !== "start")
+    ) {
+      return null;
+    }
+
+    // Don't show path if zone is blocked
+    if (hoveredNodeObj.zone === "blocked") {
+      return null;
+    }
+
+    // Find path from start to hovered node
+    const pathToHovered = findPathBetweenNodes(
+      parsed.startHub.name,
+      hoveredNode,
+      parsed.connections,
+    );
+
+    // Find path from hovered node to goal
+    const pathFromHovered = findPathBetweenNodes(
+      hoveredNode,
+      parsed.endHub.name,
+      parsed.connections,
+    );
+
+    if (pathToHovered.length === 0 || pathFromHovered.length === 0) {
+      return null;
+    }
+
+    // Combine both paths, avoiding duplicate at hovered node
+    const combined = [...pathToHovered, ...pathFromHovered.slice(1)];
+
+    return new Set(combined);
+  }, [
+    hoveredNode,
+    parsed.startHub,
+    parsed.endHub,
+    parsed.connections,
+    nodeByName,
+  ]);
+
+  const blockedNodeMessage = useMemo(() => {
+    if (!hoveredNode) {
+      return null;
+    }
+
+    const hoveredNodeObj = nodeByName.get(hoveredNode);
+    if (
+      hoveredNodeObj &&
+      hoveredNodeObj.role === "hub" &&
+      hoveredNodeObj.zone === "blocked"
+    ) {
+      return `Zone "${hoveredNode}" is blocked - no path available`;
+    }
+
+    return null;
+  }, [hoveredNode, nodeByName]);
+
+  const pathConnectionIds = useMemo(() => {
+    if (!pathNodeNames || pathNodeNames.size === 0) {
+      return null;
+    }
+
+    // Find all connections where both from and to are in the path
+    const connIds = new Set<string>();
+    parsed.connections.forEach((conn) => {
+      if (pathNodeNames.has(conn.from) && pathNodeNames.has(conn.to)) {
+        connIds.add(conn.id);
+      }
+    });
+
+    return connIds.size > 0 ? connIds : null;
+  }, [pathNodeNames, parsed.connections]);
 
   const summary = useMemo(() => {
     return {
@@ -584,6 +672,8 @@ export default function DroneMapVisualizer() {
                   hoveredNode={hoveredNode}
                   hoveredConnection={hoveredConnection}
                   connectedNodeNames={connectedNodeNames}
+                  pathNodeNames={pathNodeNames}
+                  pathConnectionIds={pathConnectionIds}
                   isPanning={isPanning}
                   onNodeHover={setHoveredNode}
                   onNodeLeave={() => setHoveredNode(null)}
@@ -600,6 +690,17 @@ export default function DroneMapVisualizer() {
                     Add a valid map with start and end hubs to see the
                     visualization.
                   </div>
+                )}
+
+                {blockedNodeMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-center rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-100 backdrop-blur-sm"
+                  >
+                    {blockedNodeMessage}
+                  </motion.div>
                 )}
               </div>
 

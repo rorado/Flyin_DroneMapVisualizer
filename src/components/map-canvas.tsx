@@ -19,6 +19,8 @@ export type MapCanvasProps = {
   hoveredNode: string | null;
   hoveredConnection: string | null;
   connectedNodeNames: Set<string> | null;
+  pathNodeNames: Set<string> | null;
+  pathConnectionIds: Set<string> | null;
   isPanning: boolean;
   onNodeHover: (name: string) => void;
   onNodeLeave: () => void;
@@ -40,6 +42,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       hoveredNode,
       hoveredConnection,
       connectedNodeNames,
+      pathNodeNames,
+      pathConnectionIds,
       isPanning,
       onNodeHover,
       onNodeLeave,
@@ -83,7 +87,13 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
             />
           </pattern>
 
-          <linearGradient id="backgroundGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient
+            id="backgroundGlow"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
             <stop offset="0%" stopColor="rgba(14,165,233,0.15)" />
             <stop offset="100%" stopColor="rgba(168,85,247,0.04)" />
           </linearGradient>
@@ -192,11 +202,15 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               return null;
             }
 
+            const isPathConnection = pathConnectionIds
+              ? pathConnectionIds.has(connection.id)
+              : false;
             const isHovered = hoveredConnection === connection.id;
             const isRelated =
               hoveredConnection === connection.id ||
               hoveredNode === connection.from ||
               hoveredNode === connection.to ||
+              isPathConnection ||
               (connectedNodeNames
                 ? connectedNodeNames.has(connection.from) &&
                   connectedNodeNames.has(connection.to)
@@ -216,8 +230,16 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   y1={from.y}
                   x2={to.x}
                   y2={to.y}
-                  stroke={isHovered ? "#f8fafc" : "rgba(148,163,184,0.8)"}
-                  strokeWidth={isHovered ? lineWidth * 1.8 : lineWidth}
+                  stroke={
+                    isHovered
+                      ? "#f8fafc"
+                      : isPathConnection
+                        ? "#10b981"
+                        : "rgba(148,163,184,0.8)"
+                  }
+                  strokeWidth={
+                    isHovered || isPathConnection ? lineWidth * 1.8 : lineWidth
+                  }
                   opacity={isRelated ? 1 : 0.18}
                   strokeLinecap="round"
                   filter={isHovered ? "url(#softGlow)" : undefined}
@@ -226,7 +248,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   className="transition-all duration-200"
                 />
 
-                {connection.maxLinkCapacity && connection.maxLinkCapacity > 1 ? (
+                {connection.maxLinkCapacity &&
+                connection.maxLinkCapacity > 1 ? (
                   <motion.g
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: isRelated ? 1 : 0.35 }}
@@ -276,8 +299,12 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               : true;
             const isActive =
               hoveredNode === node.name || hoveredConnection ? related : true;
+            const isPathNode = pathNodeNames
+              ? pathNodeNames.has(node.name)
+              : false;
             const radius = getNodeRadius(node);
-            const baseGlow = node.role === "goal" ? "url(#softGlow)" : undefined;
+            const baseGlow =
+              node.role === "goal" ? "url(#softGlow)" : undefined;
             const nodeDomId = getNodeDomId(node);
 
             return (
@@ -290,6 +317,18 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                 onMouseLeave={onNodeLeave}
                 className="cursor-pointer"
               >
+                {isPathNode && (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={radius + 0.35}
+                    fill="none"
+                    stroke="#6ee7b7"
+                    strokeWidth="0.08"
+                    opacity="0.8"
+                  />
+                )}
+
                 {node.role === "start" ? (
                   <motion.circle
                     cx={node.x}

@@ -1,4 +1,4 @@
-import { ParsedNode } from "@/lib/types";
+import { ParsedConnection, ParsedNode } from "@/lib/types";
 
 export type SvgViewBox = {
   minX: number;
@@ -6,6 +6,41 @@ export type SvgViewBox = {
   width: number;
   height: number;
 };
+
+export function findPathBetweenNodes(
+  from: string,
+  to: string,
+  connections: ParsedConnection[],
+): string[] {
+  const graph = new Map<string, Set<string>>();
+
+  connections.forEach((conn) => {
+    if (!graph.has(conn.from)) graph.set(conn.from, new Set());
+    if (!graph.has(conn.to)) graph.set(conn.to, new Set());
+    graph.get(conn.from)!.add(conn.to);
+    graph.get(conn.to)!.add(conn.from);
+  });
+
+  const queue: [string, string[]][] = [[from, [from]]];
+  const visited = new Set<string>([from]);
+
+  while (queue.length > 0) {
+    const [current, path] = queue.shift()!;
+    if (current === to) {
+      return path;
+    }
+
+    const neighbors = graph.get(current) || new Set();
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        queue.push([neighbor, [...path, neighbor]]);
+      }
+    }
+  }
+
+  return [];
+}
 
 export function getNodeAccent(node: ParsedNode) {
   if (node.color) {
