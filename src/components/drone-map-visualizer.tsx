@@ -12,7 +12,11 @@ import {
   getNodeDomId,
   SvgViewBox,
 } from "@/components/map-visualizer-utils";
-import { LegendCard, SummaryCard, SummaryLine } from "@/components/map-side-panels";
+import {
+  LegendCard,
+  SummaryCard,
+  SummaryLine,
+} from "@/components/map-side-panels";
 
 function formatIssueLocation(lineNumber: number) {
   return lineNumber > 0 ? `Line ${lineNumber}` : "File";
@@ -157,7 +161,7 @@ export default function DroneMapVisualizer() {
     }
 
     const zoomFactor = event.deltaY < 0 ? 1.12 : 0.9;
-    const nextZoom = Math.min(6, Math.max(1, zoom * zoomFactor));
+    const nextZoom = Math.min(5, Math.max(0.02, zoom * zoomFactor));
 
     if (nextZoom === zoom) {
       return;
@@ -244,6 +248,16 @@ export default function DroneMapVisualizer() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+  }
+
+  function handleZoomIn() {
+    const nextZoom = Math.min(5, zoom * 1.12);
+    setZoom(nextZoom);
+  }
+
+  function handleZoomOut() {
+    const nextZoom = Math.max(0.02, zoom * 0.9);
+    setZoom(nextZoom);
   }
 
   function handleResetView() {
@@ -521,6 +535,20 @@ export default function DroneMapVisualizer() {
                 <span className="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-sm font-semibold text-cyan-100">
                   Zoom {Math.round(zoom * 100)}%
                 </span>
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                >
+                  + Zoom in
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                >
+                  − Zoom out
+                </button>
                 <button
                   type="button"
                   onClick={handleResetView}
