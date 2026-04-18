@@ -19,12 +19,14 @@ export type MapCanvasProps = {
   coordinateScale?: number;
   hoveredNode: string | null;
   hoveredConnection: string | null;
+  selectedZone: string | null;
   connectedNodeNames: Set<string> | null;
   pathNodeNames: Set<string> | null;
   pathConnectionKeys: Set<string> | null;
   isPanning: boolean;
   onNodeHover: (name: string) => void;
   onNodeLeave: () => void;
+  onNodeClick: (name: string) => void;
   onConnectionHover: (id: string) => void;
   onConnectionLeave: () => void;
   onMapWheel: (event: React.WheelEvent<SVGSVGElement>) => void;
@@ -43,12 +45,14 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       coordinateScale = 1,
       hoveredNode,
       hoveredConnection,
+      selectedZone,
       connectedNodeNames,
       pathNodeNames,
       pathConnectionKeys,
       isPanning,
       onNodeHover,
       onNodeLeave,
+      onNodeClick,
       onConnectionHover,
       onConnectionLeave,
       onMapWheel,
@@ -260,7 +264,10 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   ? isPathConnection
                   : hoveredNode === connection.from ||
                     hoveredNode === connection.to
-                : true;
+                : selectedZone
+                  ? selectedZone === connection.from ||
+                    selectedZone === connection.to
+                  : true;
 
             const midX = (from.x + to.x) / 2;
             const midY = (from.y + to.y) / 2;
@@ -280,7 +287,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     isHovered
                       ? "#f8fafc"
                       : isPathConnection
-                        ? "#10b981"
+                        ? "#6ee7b7"
                         : "rgba(148,163,184,0.8)"
                   }
                   strokeWidth={
@@ -354,7 +361,9 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                 ? hasActiveNodePath
                   ? isPathNode
                   : hoveredNode === node.name
-                : true;
+                : selectedZone
+                  ? selectedZone === node.name
+                  : true;
             const radius = getNodeRadius(node);
             const baseGlow =
               node.role === "goal" ? "url(#softGlow)" : undefined;
@@ -368,6 +377,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                 whileHover={{ scale: 1.05 }}
                 onMouseEnter={() => onNodeHover(node.name)}
                 onMouseLeave={onNodeLeave}
+                onClick={() => onNodeClick(node.name)}
                 className="cursor-pointer"
               >
                 {isPathNode && (
@@ -379,6 +389,18 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     stroke="#6ee7b7"
                     strokeWidth="0.08"
                     opacity="0.8"
+                  />
+                )}
+
+                {selectedZone === node.name && (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={radius + 0.6}
+                    fill="none"
+                    stroke="#fbbf24"
+                    strokeWidth="0.15"
+                    opacity="0.95"
                   />
                 )}
 

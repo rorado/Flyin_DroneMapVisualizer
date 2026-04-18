@@ -75,6 +75,7 @@ export default function DroneMapVisualizer() {
   const [selectedPathIndex, setSelectedPathIndex] = useState<number | null>(
     null,
   );
+  const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [isCopying, setIsCopying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [zoom, setZoom] = useState(2.5);
@@ -176,22 +177,34 @@ export default function DroneMapVisualizer() {
   }, [parsed.startHub, parsed.endHub, parsed.connections]);
 
   const pathFromHoveredToGoal = useMemo(() => {
+    // If a specific path is selected, use that entire path
     if (
-      selectedPathIndex === null ||
-      selectedPathIndex >= allPathsFromHoveredToGoal.length
+      selectedPathIndex !== null &&
+      allPathsFromHoveredToGoal[selectedPathIndex]
     ) {
+      return allPathsFromHoveredToGoal[selectedPathIndex];
+    }
+
+    // Otherwise, use the current hover/click behavior for a single zone
+    const activeZone = selectedZone || hoveredNode;
+    if (!activeZone) {
       return [] as string[];
     }
-    return allPathsFromHoveredToGoal[selectedPathIndex];
-  }, [selectedPathIndex, allPathsFromHoveredToGoal]);
+    return [activeZone];
+  }, [selectedPathIndex, allPathsFromHoveredToGoal, selectedZone, hoveredNode]);
 
   const pathNodeNames = useMemo(() => {
-    if (pathFromHoveredToGoal.length === 0) {
-      return null;
+    // Only show green circles for nodes when a specific path is selected
+    // Don't show them on hover
+    if (
+      selectedPathIndex !== null &&
+      allPathsFromHoveredToGoal[selectedPathIndex]
+    ) {
+      return new Set(allPathsFromHoveredToGoal[selectedPathIndex]);
     }
 
-    return new Set(pathFromHoveredToGoal);
-  }, [pathFromHoveredToGoal]);
+    return null;
+  }, [selectedPathIndex, allPathsFromHoveredToGoal]);
 
   const blockedNodeMessage = useMemo(() => {
     if (!hoveredNode) {
@@ -207,35 +220,37 @@ export default function DroneMapVisualizer() {
   }, [hoveredNode, nodeByName]);
 
   const pathConnectionKeys = useMemo(() => {
-    if (pathFromHoveredToGoal.length === 0) {
-      return null;
+    // Only show connections when a specific path is selected (clicked)
+    // Don't show connections on hover
+    if (
+      selectedPathIndex !== null &&
+      allPathsFromHoveredToGoal[selectedPathIndex]
+    ) {
+      const path = allPathsFromHoveredToGoal[selectedPathIndex];
+      const connKeys = new Set<string>();
+
+      // For each consecutive pair of nodes in the path, find and add the connection
+      for (let i = 0; i < path.length - 1; i++) {
+        const from = path[i];
+        const to = path[i + 1];
+
+        parsed.connections.forEach((conn, index) => {
+          if (
+            (conn.from === from && conn.to === to) ||
+            (conn.from === to && conn.to === from)
+          ) {
+            const connectionKey = `${conn.id}-${conn.lineNumber}-${index}`;
+            connKeys.add(connectionKey);
+          }
+        });
+      }
+
+      return connKeys.size > 0 ? connKeys : null;
     }
 
-    const connectionKeysByPair = new Map<string, string>();
-    parsed.connections.forEach((conn, index) => {
-      const connectionKey = `${conn.id}-${conn.lineNumber}-${index}`;
-      const forwardKey = `${conn.from}->${conn.to}`;
-      const backwardKey = `${conn.to}->${conn.from}`;
-
-      if (!connectionKeysByPair.has(forwardKey)) {
-        connectionKeysByPair.set(forwardKey, connectionKey);
-      }
-      if (!connectionKeysByPair.has(backwardKey)) {
-        connectionKeysByPair.set(backwardKey, connectionKey);
-      }
-    });
-
-    const connKeys = new Set<string>();
-    for (let index = 0; index < pathFromHoveredToGoal.length - 1; index += 1) {
-      const pairKey = `${pathFromHoveredToGoal[index]}->${pathFromHoveredToGoal[index + 1]}`;
-      const connectionKey = connectionKeysByPair.get(pairKey);
-      if (connectionKey) {
-        connKeys.add(connectionKey);
-      }
-    }
-
-    return connKeys.size > 0 ? connKeys : null;
-  }, [pathFromHoveredToGoal, parsed.connections]);
+    // When no path is selected, return null (no green connections on hover)
+    return null;
+  }, [selectedPathIndex, allPathsFromHoveredToGoal, parsed.connections]);
   const summary = useMemo(() => {
     return {
       drones: parsed.nbDrones ?? 0,
@@ -255,6 +270,7 @@ export default function DroneMapVisualizer() {
     setHoveredNode(null);
     setHoveredConnection(null);
     setSelectedPathIndex(null);
+    setSelectedZone(null);
   }, [appliedText]);
 
   useEffect(() => {
@@ -316,6 +332,12 @@ export default function DroneMapVisualizer() {
 
   function handleMapPointerDown(event: React.PointerEvent<SVGSVGElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+
+    // Don't start panning if clicking on a node or interactive element
+    const target = event.target as SVGElement;
+    if (target && (target.tagName === "circle" || target.closest("g"))) {
       return;
     }
 
@@ -393,6 +415,11 @@ export default function DroneMapVisualizer() {
 
   function handleNodeLeave() {
     setHoveredNode(null);
+  }
+
+  function handleNodeClick(name: string) {
+    console.log(`Node clicked: ${name}, current selectedZone:`, selectedZone);
+    setSelectedZone(selectedZone === name ? null : name);
   }
 
   function handleConnectionHover(id: string) {
@@ -678,11 +705,17 @@ export default function DroneMapVisualizer() {
                   allPathsFromHoveredToGoal.map((path, idx) => (
                     <button
                       key={idx}
-                      onClick={() =>
+                      onClick={() => {
+                        console.log(
+                          `Path ${idx} clicked, current selectedPathIndex:`,
+                          selectedPathIndex,
+                          "allPathsFromHoveredToGoal.length:",
+                          allPathsFromHoveredToGoal.length,
+                        );
                         setSelectedPathIndex(
                           selectedPathIndex === idx ? null : idx,
-                        )
-                      }
+                        );
+                      }}
                       className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono break-words transition ${
                         selectedPathIndex === idx
                           ? "border-emerald-400 bg-emerald-400/20 text-emerald-100 ring-1 ring-emerald-400"
@@ -732,9 +765,11 @@ export default function DroneMapVisualizer() {
                   Interactive map
                 </h2>
                 <p className="text-sm text-slate-400">
-                  {selectedPathIndex !== null
-                    ? `Path ${selectedPathIndex + 1} highlighted`
-                    : "Click a path to toggle highlight."}
+                  {selectedZone
+                    ? `${selectedZone} connections highlighted (click to hide)`
+                    : hoveredNode
+                      ? `${hoveredNode} connections shown on hover`
+                      : "Hover over a zone to see connections. Click to toggle."}
                 </p>
               </div>
 
@@ -791,12 +826,14 @@ export default function DroneMapVisualizer() {
                   coordinateScale={COORDINATE_SPACING_FACTOR}
                   hoveredNode={hoveredNode}
                   hoveredConnection={hoveredConnection}
+                  selectedZone={selectedZone}
                   connectedNodeNames={connectedNodeNames}
                   pathNodeNames={pathNodeNames}
                   pathConnectionKeys={pathConnectionKeys}
                   isPanning={isPanning}
                   onNodeHover={handleNodeHover}
                   onNodeLeave={handleNodeLeave}
+                  onNodeClick={handleNodeClick}
                   onConnectionHover={handleConnectionHover}
                   onConnectionLeave={handleConnectionLeave}
                   onMapWheel={handleMapWheel}
