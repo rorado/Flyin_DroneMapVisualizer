@@ -10,6 +10,7 @@ import { MapCanvas } from "./map-canvas";
 import {
   clampPan,
   findPathBetweenNodes,
+  findAllPathsBetweenNodes,
   getNodeDomId,
   SvgViewBox,
 } from "@/components/map-visualizer-utils";
@@ -179,6 +180,19 @@ export default function DroneMapVisualizer() {
     );
   }, [hoveredNode, parsed.endHub, parsed.connections, nodeByName]);
 
+  const allPathsFromHoveredToGoal = useMemo(() => {
+    if (!parsed.startHub || !parsed.endHub || parsed.connections.length === 0) {
+      return [] as string[][];
+    }
+
+    return findAllPathsBetweenNodes(
+      parsed.startHub.name,
+      parsed.endHub.name,
+      parsed.connections,
+      100,
+    );
+  }, [parsed.startHub, parsed.endHub, parsed.connections]);
+
   const pathNodeNames = useMemo(() => {
     if (pathFromHoveredToGoal.length === 0) {
       return null;
@@ -230,7 +244,6 @@ export default function DroneMapVisualizer() {
 
     return connKeys.size > 0 ? connKeys : null;
   }, [pathFromHoveredToGoal, parsed.connections]);
-
   const summary = useMemo(() => {
     return {
       drones: parsed.nbDrones ?? 0,
@@ -645,6 +658,48 @@ export default function DroneMapVisualizer() {
                     ))
                   )}
                 </AnimatePresence>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h3 className="font-semibold text-white">All Possible Paths</h3>
+                <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300">
+                  {allPathsFromHoveredToGoal.length} paths
+                </span>
+              </div>
+
+              <div className="max-h-[260px] space-y-2 overflow-y-auto">
+                {allPathsFromHoveredToGoal.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-400/20 bg-slate-400/10 px-4 py-3 text-sm text-slate-300">
+                    No paths found
+                  </div>
+                ) : (
+                  allPathsFromHoveredToGoal.map((path, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 px-3 py-2 text-xs font-mono text-slate-100 break-words"
+                    >
+                      <div className="font-semibold text-emerald-300 mb-1">
+                        Path {idx + 1}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1 whitespace-normal">
+                        {path.map((zone, i) => (
+                          <div key={i} className="flex items-center gap-1">
+                            <span className="rounded px-2 py-0.5 bg-slate-800 text-cyan-200 font-medium">
+                              {zone}
+                            </span>
+                            {i < path.length - 1 && (
+                              <span className="text-emerald-400 font-bold">
+                                →
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </motion.section>
