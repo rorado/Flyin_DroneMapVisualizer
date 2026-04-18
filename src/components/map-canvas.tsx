@@ -21,7 +21,7 @@ export type MapCanvasProps = {
   hoveredConnection: string | null;
   connectedNodeNames: Set<string> | null;
   pathNodeNames: Set<string> | null;
-  pathConnectionIds: Set<string> | null;
+  pathConnectionKeys: Set<string> | null;
   isPanning: boolean;
   onNodeHover: (name: string) => void;
   onNodeLeave: () => void;
@@ -45,7 +45,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       hoveredConnection,
       connectedNodeNames,
       pathNodeNames,
-      pathConnectionIds,
+      pathConnectionKeys,
       isPanning,
       onNodeHover,
       onNodeLeave,
@@ -203,7 +203,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
         ))}
 
         <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          {connections.map((connection) => {
+          {connections.map((connection, index) => {
             const from = nodeByName.get(connection.from);
             const to = nodeByName.get(connection.to);
 
@@ -211,19 +211,25 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               return null;
             }
 
-            const isPathConnection = pathConnectionIds
-              ? pathConnectionIds.has(connection.id)
+            const connectionKey = `${connection.id}-${connection.lineNumber}-${index}`;
+            const isPathConnection = pathConnectionKeys
+              ? pathConnectionKeys.has(connectionKey)
               : false;
             const isHovered = hoveredConnection === connection.id;
-            const isRelated =
-              hoveredConnection === connection.id ||
-              hoveredNode === connection.from ||
-              hoveredNode === connection.to ||
-              isPathConnection ||
-              (connectedNodeNames
-                ? connectedNodeNames.has(connection.from) &&
-                  connectedNodeNames.has(connection.to)
-                : true);
+            const hasActiveNodePath =
+              hoveredNode !== null && pathConnectionKeys !== null;
+            const isRelated = hoveredConnection
+              ? hoveredConnection === connection.id ||
+                (connectedNodeNames
+                  ? connectedNodeNames.has(connection.from) &&
+                    connectedNodeNames.has(connection.to)
+                  : false)
+              : hoveredNode
+                ? hasActiveNodePath
+                  ? isPathConnection
+                  : hoveredNode === connection.from ||
+                    hoveredNode === connection.to
+                : true;
 
             const midX = (from.x + to.x) / 2;
             const midY = (from.y + to.y) / 2;
@@ -233,7 +239,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                 : 0.07;
 
             return (
-              <g key={connection.id}>
+              <g key={connectionKey}>
                 <line
                   x1={from.x}
                   y1={from.y}
@@ -303,14 +309,21 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
         <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           {nodes.map((node) => {
             const accent = getNodeAccent(node);
-            const related = connectedNodeNames
-              ? connectedNodeNames.has(node.name)
-              : true;
-            const isActive =
-              hoveredNode === node.name || hoveredConnection ? related : true;
             const isPathNode = pathNodeNames
               ? pathNodeNames.has(node.name)
               : false;
+            const hasActiveNodePath =
+              hoveredNode !== null && pathNodeNames !== null;
+            const isConnectedToHoveredConnection = connectedNodeNames
+              ? connectedNodeNames.has(node.name)
+              : false;
+            const isActive = hoveredConnection
+              ? isConnectedToHoveredConnection
+              : hoveredNode
+                ? hasActiveNodePath
+                  ? isPathNode
+                  : hoveredNode === node.name
+                : true;
             const radius = getNodeRadius(node);
             const baseGlow =
               node.role === "goal" ? "url(#softGlow)" : undefined;
@@ -436,7 +449,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               x={viewBox.minX + 0.85}
               y={viewBox.minY + 1.03}
               fill="#e2e8f0"
-              fontSize="0.24"
+              fontSize={0.24}
               fontWeight={700}
             >
               {`${hoveredNodeDetails.name} (${hoveredNodeDetails.role.toUpperCase()})`}
@@ -445,7 +458,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               x={viewBox.minX + 0.85}
               y={viewBox.minY + 1.35}
               fill="rgba(191,219,254,0.95)"
-              fontSize="0.2"
+              fontSize={0.2}
             >
               {`Zone: ${hoveredNodeDetails.zone} | Pos: (${hoveredDisplayX}, ${hoveredDisplayY})${hoveredNodeDetails.maxDrones ? ` | Max drones: ${hoveredNodeDetails.maxDrones}` : ""}`}
             </text>

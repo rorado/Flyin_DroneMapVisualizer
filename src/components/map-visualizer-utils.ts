@@ -42,6 +42,145 @@ export function findPathBetweenNodes(
   return [];
 }
 
+export function findAllShortestPathsBetweenNodes(
+  from: string,
+  to: string,
+  connections: ParsedConnection[],
+): string[][] {
+  if (from === to) {
+    return [[from]];
+  }
+
+  const graph = new Map<string, Set<string>>();
+  connections.forEach((conn) => {
+    if (!graph.has(conn.from)) graph.set(conn.from, new Set());
+    if (!graph.has(conn.to)) graph.set(conn.to, new Set());
+    graph.get(conn.from)!.add(conn.to);
+    graph.get(conn.to)!.add(conn.from);
+  });
+
+  if (!graph.has(from) || !graph.has(to)) {
+    return [];
+  }
+
+  const distance = new Map<string, number>();
+  const parents = new Map<string, Set<string>>();
+  const queue: string[] = [from];
+  distance.set(from, 0);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const currentDistance = distance.get(current)!;
+    const neighbors = graph.get(current) ?? new Set<string>();
+
+    for (const neighbor of neighbors) {
+      const nextDistance = currentDistance + 1;
+      if (!distance.has(neighbor)) {
+        distance.set(neighbor, nextDistance);
+        parents.set(neighbor, new Set([current]));
+        queue.push(neighbor);
+      } else if (distance.get(neighbor) === nextDistance) {
+        if (!parents.has(neighbor)) {
+          parents.set(neighbor, new Set());
+        }
+        parents.get(neighbor)!.add(current);
+      }
+    }
+  }
+
+  if (!distance.has(to)) {
+    return [];
+  }
+
+  const results: string[][] = [];
+  const path = [to];
+  const maxPaths = 150;
+
+  function backtrack(node: string) {
+    if (results.length >= maxPaths) {
+      return;
+    }
+
+    if (node === from) {
+      results.push([...path].reverse());
+      return;
+    }
+
+    const nodeParents = parents.get(node);
+    if (!nodeParents || nodeParents.size === 0) {
+      return;
+    }
+
+    nodeParents.forEach((parent) => {
+      path.push(parent);
+      backtrack(parent);
+      path.pop();
+    });
+  }
+
+  backtrack(to);
+  return results;
+}
+
+export function findAllPathsBetweenNodes(
+  from: string,
+  to: string,
+  connections: ParsedConnection[],
+  maxPaths = 600,
+): string[][] {
+  if (from === to) {
+    return [[from]];
+  }
+
+  const graph = new Map<string, Set<string>>();
+  connections.forEach((conn) => {
+    if (!graph.has(conn.from)) graph.set(conn.from, new Set());
+    if (!graph.has(conn.to)) graph.set(conn.to, new Set());
+    graph.get(conn.from)!.add(conn.to);
+    graph.get(conn.to)!.add(conn.from);
+  });
+
+  if (!graph.has(from) || !graph.has(to)) {
+    return [];
+  }
+
+  const results: string[][] = [];
+  const path: string[] = [from];
+  const visited = new Set<string>([from]);
+  const maxDepth = graph.size;
+
+  function dfs(current: string) {
+    if (results.length >= maxPaths) {
+      return;
+    }
+
+    if (current === to) {
+      results.push([...path]);
+      return;
+    }
+
+    if (path.length > maxDepth) {
+      return;
+    }
+
+    const neighbors = graph.get(current) ?? new Set<string>();
+    neighbors.forEach((neighbor) => {
+      if (visited.has(neighbor)) {
+        return;
+      }
+
+      visited.add(neighbor);
+      path.push(neighbor);
+      dfs(neighbor);
+      path.pop();
+      visited.delete(neighbor);
+    });
+  }
+
+  dfs(from);
+  return results;
+}
+
 export function getNodeAccent(node: ParsedNode) {
   if (node.color) {
     return node.color;

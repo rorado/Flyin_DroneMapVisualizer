@@ -6,7 +6,7 @@ import { computeViewBox } from "@/lib/geometry";
 import { parseDroneMap } from "@/lib/parser";
 import { SAMPLE_MAPS, SAMPLE_OPTIONS, SampleKey } from "@/lib/samples";
 import { ParsedMap, ParsedNode } from "@/lib/types";
-import { MapCanvas } from "@/components/map-canvas";
+import { MapCanvas } from "./map-canvas";
 import {
   clampPan,
   findPathBetweenNodes,
@@ -158,59 +158,34 @@ export default function DroneMapVisualizer() {
     return null;
   }, [hoveredConnection, hoveredNode, parsed.connections]);
 
-  const pathNodeNames = useMemo(() => {
-    if (
-      !hoveredNode ||
-      !parsed.startHub ||
-      !parsed.endHub ||
-      parsed.connections.length === 0
-    ) {
-      return null;
+  const pathFromHoveredToGoal = useMemo(() => {
+    if (!hoveredNode || !parsed.endHub || parsed.connections.length === 0) {
+      return [] as string[];
     }
 
-    // Show path for hub nodes and start node
     const hoveredNodeObj = nodeByName.get(hoveredNode);
-    if (
-      !hoveredNodeObj ||
-      (hoveredNodeObj.role !== "hub" && hoveredNodeObj.role !== "start")
-    ) {
-      return null;
+    if (!hoveredNodeObj) {
+      return [];
     }
 
-    // Don't show path if zone is blocked
     if (hoveredNodeObj.zone === "blocked") {
-      return null;
+      return [];
     }
 
-    // Find path from start to hovered node
-    const pathToHovered = findPathBetweenNodes(
-      parsed.startHub.name,
-      hoveredNode,
-      parsed.connections,
-    );
-
-    // Find path from hovered node to goal
-    const pathFromHovered = findPathBetweenNodes(
+    return findPathBetweenNodes(
       hoveredNode,
       parsed.endHub.name,
       parsed.connections,
     );
+  }, [hoveredNode, parsed.endHub, parsed.connections, nodeByName]);
 
-    if (pathToHovered.length === 0 || pathFromHovered.length === 0) {
+  const pathNodeNames = useMemo(() => {
+    if (pathFromHoveredToGoal.length === 0) {
       return null;
     }
 
-    // Combine both paths, avoiding duplicate at hovered node
-    const combined = [...pathToHovered, ...pathFromHovered.slice(1)];
-
-    return new Set(combined);
-  }, [
-    hoveredNode,
-    parsed.startHub,
-    parsed.endHub,
-    parsed.connections,
-    nodeByName,
-  ]);
+    return new Set(pathFromHoveredToGoal);
+  }, [pathFromHoveredToGoal]);
 
   const blockedNodeMessage = useMemo(() => {
     if (!hoveredNode) {
@@ -218,32 +193,43 @@ export default function DroneMapVisualizer() {
     }
 
     const hoveredNodeObj = nodeByName.get(hoveredNode);
-    if (
-      hoveredNodeObj &&
-      hoveredNodeObj.role === "hub" &&
-      hoveredNodeObj.zone === "blocked"
-    ) {
+    if (hoveredNodeObj && hoveredNodeObj.zone === "blocked") {
       return `Zone "${hoveredNode}" is blocked - no path available`;
     }
 
     return null;
   }, [hoveredNode, nodeByName]);
 
-  const pathConnectionIds = useMemo(() => {
-    if (!pathNodeNames || pathNodeNames.size === 0) {
+  const pathConnectionKeys = useMemo(() => {
+    if (pathFromHoveredToGoal.length === 0) {
       return null;
     }
 
-    // Find all connections where both from and to are in the path
-    const connIds = new Set<string>();
-    parsed.connections.forEach((conn) => {
-      if (pathNodeNames.has(conn.from) && pathNodeNames.has(conn.to)) {
-        connIds.add(conn.id);
+    const connectionKeysByPair = new Map<string, string>();
+    parsed.connections.forEach((conn, index) => {
+      const connectionKey = `${conn.id}-${conn.lineNumber}-${index}`;
+      const forwardKey = `${conn.from}->${conn.to}`;
+      const backwardKey = `${conn.to}->${conn.from}`;
+
+      if (!connectionKeysByPair.has(forwardKey)) {
+        connectionKeysByPair.set(forwardKey, connectionKey);
+      }
+      if (!connectionKeysByPair.has(backwardKey)) {
+        connectionKeysByPair.set(backwardKey, connectionKey);
       }
     });
 
-    return connIds.size > 0 ? connIds : null;
-  }, [pathNodeNames, parsed.connections]);
+    const connKeys = new Set<string>();
+    for (let index = 0; index < pathFromHoveredToGoal.length - 1; index += 1) {
+      const pairKey = `${pathFromHoveredToGoal[index]}->${pathFromHoveredToGoal[index + 1]}`;
+      const connectionKey = connectionKeysByPair.get(pairKey);
+      if (connectionKey) {
+        connKeys.add(connectionKey);
+      }
+    }
+
+    return connKeys.size > 0 ? connKeys : null;
+  }, [pathFromHoveredToGoal, parsed.connections]);
 
   const summary = useMemo(() => {
     return {
@@ -392,6 +378,24 @@ export default function DroneMapVisualizer() {
   function handleResetView() {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+  }
+
+  function handleNodeHover(name: string) {
+    setHoveredConnection(null);
+    setHoveredNode(name);
+  }
+
+  function handleNodeLeave() {
+    setHoveredNode(null);
+  }
+
+  function handleConnectionHover(id: string) {
+    setHoveredNode(null);
+    setHoveredConnection(id);
+  }
+
+  function handleConnectionLeave() {
+    setHoveredConnection(null);
   }
 
   async function handleCopyJson() {
@@ -715,12 +719,12 @@ export default function DroneMapVisualizer() {
                   hoveredConnection={hoveredConnection}
                   connectedNodeNames={connectedNodeNames}
                   pathNodeNames={pathNodeNames}
-                  pathConnectionIds={pathConnectionIds}
+                  pathConnectionKeys={pathConnectionKeys}
                   isPanning={isPanning}
-                  onNodeHover={setHoveredNode}
-                  onNodeLeave={() => setHoveredNode(null)}
-                  onConnectionHover={setHoveredConnection}
-                  onConnectionLeave={() => setHoveredConnection(null)}
+                  onNodeHover={handleNodeHover}
+                  onNodeLeave={handleNodeLeave}
+                  onConnectionHover={handleConnectionHover}
+                  onConnectionLeave={handleConnectionLeave}
                   onMapWheel={handleMapWheel}
                   onMapPointerDown={handleMapPointerDown}
                   onMapPointerMove={handleMapPointerMove}
