@@ -339,9 +339,9 @@ export default function DroneMapVisualizer() {
                 aria-label="Open sohrich GitHub profile"
               >
                 <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/15 via-teal-300/10 to-sky-400/15 opacity-80 transition group-hover:opacity-100" />
-                <span className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-400/20 text-xs">
+                {/* <span className="relative inline-flex h-6 w-6 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-400/20 text-xs">
                   GH
-                </span>
+                </span> */}
                 <span className="relative">by sohrich</span>
                 <span className="relative text-cyan-200 transition-transform duration-200 group-hover:translate-x-0.5">
                   {"->"}
