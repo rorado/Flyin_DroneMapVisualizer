@@ -72,8 +72,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
     const hoveredNodeRadius = hoveredNodeDetails
       ? getNodeRadius(hoveredNodeDetails)
       : 0;
-    const infoCardWidth = Math.min(12.8, Math.max(8.2, viewBox.width * 0.42));
-    const infoCardHeight = hoveredNodeDetails?.maxDrones ? 2.0 : 1.7;
+    const infoCardWidth = Math.min(16, Math.max(10, viewBox.width * 0.42));
+    const infoCardHeight = hoveredNodeDetails?.maxDrones ? 3.8 : 3.2;
     const infoCardPadding = 0.35;
     const aboveY = hoveredNodeDetails
       ? hoveredNodeDetails.y - hoveredNodeRadius - infoCardHeight - 0.35
@@ -468,28 +468,28 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
           <g pointerEvents="none">
             <rect
               x={infoCardX}
-              y={infoCardY}
+              y={infoCardY - 0.4}
               width={infoCardWidth}
               height={infoCardHeight}
-              rx={0.22}
+              rx={0.2}
               fill="rgba(15,23,42,0.86)"
               stroke="rgba(56,189,248,0.55)"
               strokeWidth={0.04}
             />
             <text
               x={infoCardX + 0.35}
-              y={infoCardY + 0.42}
+              y={infoCardY + 0.55}
               fill="#e2e8f0"
-              fontSize={0.24}
+              fontSize={0.9}
               fontWeight={700}
             >
               {`${hoveredNodeDetails.name} (${hoveredNodeDetails.role.toUpperCase()})`}
             </text>
             <text
               x={infoCardX + 0.35}
-              y={infoCardY + 0.78}
+              y={infoCardY + 1.4}
               fill="rgba(191,219,254,0.95)"
-              fontSize={0.2}
+              fontSize={0.8}
             >
               {`Zone: ${hoveredNodeDetails.zone} | Pos: (${hoveredDisplayX}, ${hoveredDisplayY})${hoveredNodeDetails.maxDrones ? ` | Max drones: ${hoveredNodeDetails.maxDrones}` : ""}`}
             </text>
