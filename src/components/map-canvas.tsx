@@ -69,6 +69,37 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
     const hoveredDisplayY = hoveredNodeDetails
       ? hoveredNodeDetails.y / coordinateScale
       : 0;
+    const hoveredNodeRadius = hoveredNodeDetails
+      ? getNodeRadius(hoveredNodeDetails)
+      : 0;
+    const infoCardWidth = Math.min(12.8, Math.max(8.2, viewBox.width * 0.42));
+    const infoCardHeight = hoveredNodeDetails?.maxDrones ? 2.0 : 1.7;
+    const infoCardPadding = 0.35;
+    const aboveY = hoveredNodeDetails
+      ? hoveredNodeDetails.y - hoveredNodeRadius - infoCardHeight - 0.35
+      : viewBox.minY;
+    const belowY = hoveredNodeDetails
+      ? hoveredNodeDetails.y + hoveredNodeRadius + 0.35
+      : viewBox.minY;
+    const preferredY =
+      hoveredNodeDetails && aboveY >= viewBox.minY + infoCardPadding
+        ? aboveY
+        : belowY;
+    const infoCardX = hoveredNodeDetails
+      ? Math.min(
+          Math.max(
+            hoveredNodeDetails.x - infoCardWidth / 2,
+            viewBox.minX + infoCardPadding,
+          ),
+          viewBox.minX + viewBox.width - infoCardWidth - infoCardPadding,
+        )
+      : viewBox.minX + infoCardPadding;
+    const infoCardY = hoveredNodeDetails
+      ? Math.min(
+          Math.max(preferredY, viewBox.minY + infoCardPadding),
+          viewBox.minY + viewBox.height - infoCardHeight - infoCardPadding,
+        )
+      : viewBox.minY + infoCardPadding;
 
     return (
       <motion.svg
@@ -436,18 +467,18 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
         {hoveredNodeDetails ? (
           <g pointerEvents="none">
             <rect
-              x={viewBox.minX + 0.5}
-              y={viewBox.minY + 0.5}
-              width={Math.min(12.8, Math.max(10.4, viewBox.width * 0.55))}
-              height={1.55}
+              x={infoCardX}
+              y={infoCardY}
+              width={infoCardWidth}
+              height={infoCardHeight}
               rx={0.22}
               fill="rgba(15,23,42,0.86)"
               stroke="rgba(56,189,248,0.55)"
               strokeWidth={0.04}
             />
             <text
-              x={viewBox.minX + 0.85}
-              y={viewBox.minY + 1.03}
+              x={infoCardX + 0.35}
+              y={infoCardY + 0.42}
               fill="#e2e8f0"
               fontSize={0.24}
               fontWeight={700}
@@ -455,8 +486,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               {`${hoveredNodeDetails.name} (${hoveredNodeDetails.role.toUpperCase()})`}
             </text>
             <text
-              x={viewBox.minX + 0.85}
-              y={viewBox.minY + 1.35}
+              x={infoCardX + 0.35}
+              y={infoCardY + 0.78}
               fill="rgba(191,219,254,0.95)"
               fontSize={0.2}
             >

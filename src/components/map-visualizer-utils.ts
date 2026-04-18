@@ -228,18 +228,18 @@ export function getNodeGradient(node: ParsedNode) {
 
 export function getNodeRadius(node: ParsedNode) {
   if (node.role === "start" || node.role === "goal") {
-    return 1;
+    return 1.3;
   }
 
   switch (node.zone) {
     case "priority":
-      return 0.42;
+      return 0.56;
     case "restricted":
-      return 0.58;
+      return 0.75;
     case "blocked":
-      return 0.72;
+      return 0.95;
     default:
-      return 0.35;
+      return 0.48;
   }
 }
 

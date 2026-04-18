@@ -43,7 +43,7 @@ function serializeParsedMap(parsed: ParsedMap, sourceText: string) {
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 30;
 const TARGET_CELL_SPACING_PX = 600;
-const COORDINATE_SPACING_FACTOR = 3;
+const COORDINATE_SPACING_FACTOR = 4;
 
 function getZoomForCellSpacing(
   svgElement: SVGSVGElement | null,
@@ -73,7 +73,7 @@ export default function DroneMapVisualizer() {
   );
   const [isCopying, setIsCopying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(2.5);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -652,7 +652,7 @@ export default function DroneMapVisualizer() {
           <motion.section
             initial={{ opacity: 0, x: 18 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex min-h-[640px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 shadow-glow backdrop-blur-xl"
+            className="flex min-h-[820px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 shadow-glow backdrop-blur-xl"
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
               <div>
@@ -707,7 +707,7 @@ export default function DroneMapVisualizer() {
             </div>
 
             <div className="grid flex-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-              <div className="relative min-h-[520px] overflow-hidden rounded-3xl border border-white/10 bg-slate-950/90">
+              <div className="relative min-h-[720px] overflow-hidden rounded-3xl border border-white/10 bg-slate-950/90">
                 <MapCanvas
                   ref={svgRef}
                   nodes={nodes}
