@@ -1,0 +1,4 @@
+- Drone Map Visualizer uses Next.js App Router, TypeScript, Tailwind CSS, and client-side SVG rendering.
+- Keep the app modern, responsive, and educational.
+- Prefer reusable parser utilities and strong typing.
+- Preserve the existing dark visual style and avoid unnecessary dependencies.
