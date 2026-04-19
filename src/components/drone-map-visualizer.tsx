@@ -172,7 +172,7 @@ export default function DroneMapVisualizer() {
       parsed.startHub.name,
       parsed.endHub.name,
       parsed.connections,
-      100,
+      10000,
     );
   }, [parsed.startHub, parsed.endHub, parsed.connections]);
 
