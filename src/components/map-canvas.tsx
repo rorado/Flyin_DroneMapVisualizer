@@ -406,7 +406,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   },
                 }}
                 // onMouseEnter={() => onNodeHover(node.name)}
-                // onHoverEnd={onNodeLeave}
+                // onMouseLeave={() => onNodeLeave()}
                 onClick={() => onNodeClick(node.name)}
                 className="cursor-pointer"
               >

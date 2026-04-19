@@ -317,6 +317,17 @@ export default function DroneMapVisualizer() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [drawnStrokes]);
 
+  // Handle fullscreen class
+  useEffect(() => {
+    if (isFullscreen) {
+      document.documentElement.classList.add("fullscreen");
+      document.body.classList.add("fullscreen");
+    } else {
+      document.documentElement.classList.remove("fullscreen");
+      document.body.classList.remove("fullscreen");
+    }
+  }, [isFullscreen]);
+
   function handleUndoDrawing() {
     setDrawnStrokes((prev) => prev.slice(0, -1));
   }
