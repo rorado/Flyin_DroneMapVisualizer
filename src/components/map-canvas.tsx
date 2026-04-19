@@ -33,6 +33,16 @@ export type MapCanvasProps = {
   onMapPointerDown: (event: React.PointerEvent<SVGSVGElement>) => void;
   onMapPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void;
   onMapPointerEnd: (event: React.PointerEvent<SVGSVGElement>) => void;
+  drawnStrokes: Array<{
+    points: Array<{ x: number; y: number }>;
+    color: string;
+    size: number;
+    isEraser: boolean;
+  }>;
+  isDrawingMode: boolean;
+  onDrawingStart: (event: React.PointerEvent<SVGSVGElement>) => void;
+  onDrawingMove: (event: React.PointerEvent<SVGSVGElement>) => void;
+  onDrawingEnd: (event: React.PointerEvent<SVGSVGElement>) => void;
 };
 
 export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
@@ -59,6 +69,11 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       onMapPointerDown,
       onMapPointerMove,
       onMapPointerEnd,
+      drawnStrokes,
+      isDrawingMode,
+      onDrawingStart,
+      onDrawingMove,
+      onDrawingEnd,
     },
     ref,
   ) {
@@ -109,17 +124,23 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       <motion.svg
         ref={ref}
         viewBox={`${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`}
-        className={`h-full w-full touch-none ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`h-full w-full touch-none ${
+          isDrawingMode
+            ? "cursor-crosshair"
+            : isPanning
+              ? "cursor-grabbing"
+              : "cursor-grab"
+        }`}
         role="img"
         aria-label="Drone map visualization"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         onWheel={onMapWheel}
-        onPointerDown={onMapPointerDown}
-        onPointerMove={onMapPointerMove}
-        onPointerUp={onMapPointerEnd}
-        onPointerCancel={onMapPointerEnd}
-        onPointerLeave={onMapPointerEnd}
+        onPointerDown={isDrawingMode ? onDrawingStart : onMapPointerDown}
+        onPointerMove={isDrawingMode ? onDrawingMove : onMapPointerMove}
+        onPointerUp={isDrawingMode ? onDrawingEnd : onMapPointerEnd}
+        onPointerCancel={isDrawingMode ? onDrawingEnd : onMapPointerEnd}
+        onPointerLeave={isDrawingMode ? onDrawingEnd : onMapPointerEnd}
       >
         <defs>
           <pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse">
@@ -485,6 +506,31 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
             );
           })}
         </motion.g>
+
+        {/* Drawing Layer */}
+        <g>
+          {drawnStrokes.map((stroke, strokeIndex) => {
+            if (stroke.points.length < 2 || stroke.isEraser) return null;
+
+            let pathData = `M ${stroke.points[0].x} ${stroke.points[0].y}`;
+            for (let i = 1; i < stroke.points.length; i++) {
+              pathData += ` L ${stroke.points[i].x} ${stroke.points[i].y}`;
+            }
+
+            return (
+              <path
+                key={strokeIndex}
+                d={pathData}
+                fill="none"
+                stroke={stroke.color}
+                strokeWidth={stroke.size}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.85}
+              />
+            );
+          })}
+        </g>
 
         {hoveredNodeDetails ? (
           <g pointerEvents="none">

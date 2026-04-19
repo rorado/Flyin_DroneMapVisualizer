@@ -81,6 +81,18 @@ export default function DroneMapVisualizer() {
   const [zoom, setZoom] = useState(2.5);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [drawingTool, setDrawingTool] = useState<"pen" | "eraser" | null>(null);
+  const [drawColor, setDrawColor] = useState<string>("#DFFF00");
+  const [brushSize, setBrushSize] = useState<number>(0.05);
+  const [drawnStrokes, setDrawnStrokes] = useState<
+    Array<{
+      points: Array<{ x: number; y: number }>;
+      color: string;
+      size: number;
+      isEraser: boolean;
+    }>
+  >([]);
+  const [isDrawing, setIsDrawing] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const panPointerRef = useRef<{
     active: boolean;
@@ -407,7 +419,91 @@ export default function DroneMapVisualizer() {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }
+  function handleDrawingStart(event: React.PointerEvent<SVGSVGElement>) {
+    if (!svgRef.current || drawingTool === null) return;
+    setIsDrawing(true);
+    const svg = svgRef.current;
 
+    // Convert screen coordinates to SVG coordinates
+    const svgCoords = svg.createSVGPoint();
+    svgCoords.x = event.clientX;
+    svgCoords.y = event.clientY;
+    const transformedPoint = svgCoords.matrixTransform(
+      svg.getScreenCTM()?.inverse(),
+    );
+
+    if (drawingTool === "eraser") {
+      // In eraser mode, immediately erase nearby strokes
+      handleEraserAtPoint(transformedPoint);
+    } else {
+      // In pen mode, start a new stroke
+      setDrawnStrokes((prev) => [
+        ...prev,
+        {
+          points: [{ x: transformedPoint.x, y: transformedPoint.y }],
+          color: drawColor,
+          size: brushSize,
+          isEraser: false,
+        },
+      ]);
+    }
+  }
+
+  function handleEraserAtPoint(point: { x: number; y: number }) {
+    const eraserRadius = brushSize * 0.8;
+
+    setDrawnStrokes((prev) =>
+      prev.filter((stroke) => {
+        // Check if any point in this stroke is close to the eraser point
+        return !stroke.points.some((strokePoint) => {
+          const distance = Math.sqrt(
+            Math.pow(strokePoint.x - point.x, 2) +
+              Math.pow(strokePoint.y - point.y, 2),
+          );
+          return distance < eraserRadius;
+        });
+      }),
+    );
+  }
+
+  function handleDrawingMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (!isDrawing || !svgRef.current) return;
+    const svg = svgRef.current;
+
+    // Convert screen coordinates to SVG coordinates
+    const svgCoords = svg.createSVGPoint();
+    svgCoords.x = event.clientX;
+    svgCoords.y = event.clientY;
+    const transformedPoint = svgCoords.matrixTransform(
+      svg.getScreenCTM()?.inverse(),
+    );
+
+    if (drawingTool === "eraser") {
+      // Erase strokes at this point
+      handleEraserAtPoint(transformedPoint);
+    } else if (drawingTool === "pen" && drawnStrokes.length > 0) {
+      // Add to current pen stroke
+      setDrawnStrokes((prev) => {
+        const updated = [...prev];
+        const lastStroke = updated[updated.length - 1];
+        if (lastStroke && !lastStroke.isEraser) {
+          lastStroke.points.push({
+            x: transformedPoint.x,
+            y: transformedPoint.y,
+          });
+        }
+        return updated;
+      });
+    }
+  }
+
+  function handleDrawingEnd() {
+    setIsDrawing(false);
+  }
+
+  function handleClearDrawing() {
+    setDrawnStrokes([]);
+  }
   function handleNodeHover(name: string) {
     setHoveredConnection(null);
     setHoveredNode(name);
@@ -798,6 +894,70 @@ export default function DroneMapVisualizer() {
                 >
                   Reset view
                 </button>
+
+                {/* Drawing Tools */}
+                <div className="flex flex-wrap gap-2 border-l border-white/10 pl-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDrawingTool(drawingTool === "pen" ? null : "pen")
+                    }
+                    className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                      drawingTool === "pen"
+                        ? "border border-amber-400 bg-amber-400/20 text-amber-100"
+                        : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    }`}
+                  >
+                    ✏️ Pen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDrawingTool(drawingTool === "eraser" ? null : "eraser")
+                    }
+                    className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                      drawingTool === "eraser"
+                        ? "border border-red-400 bg-red-400/20 text-red-100"
+                        : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    }`}
+                  >
+                    🧹 Erase
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Color:
+                    </label>
+                    <input
+                      type="color"
+                      value={drawColor}
+                      onChange={(e) => setDrawColor(e.target.value)}
+                      className="h-10 w-16 cursor-pointer rounded-2xl border-2 border-white/20 hover:border-white/40 transition"
+                      disabled={drawingTool === "eraser"}
+                      title="Pick a drawing color"
+                    />
+                  </div>
+                  <select
+                    value={brushSize}
+                    onChange={(e) => setBrushSize(Number(e.target.value))}
+                    className="rounded-2xl border border-white/10 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/70"
+                  >
+                    <option value={0.05}>Size: 4px</option>
+                    <option value={0.07}>Size: 6px</option>
+                    <option value={0.1}>Size: 8px</option>
+                    <option value={0.15}>Size: 12px</option>
+                    <option value={0.2}>Size: 16px</option>
+                    <option value={0.25}>Size: 20px</option>
+                    <option value={1}>Size: 24px</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleClearDrawing}
+                    className="rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-400/20"
+                  >
+                    Clear Drawing
+                  </button>
+                </div>
+
                 <button
                   type="button"
                   onClick={handleCopyJson}
@@ -840,6 +1000,11 @@ export default function DroneMapVisualizer() {
                   onMapPointerDown={handleMapPointerDown}
                   onMapPointerMove={handleMapPointerMove}
                   onMapPointerEnd={handleMapPointerEnd}
+                  drawnStrokes={drawnStrokes}
+                  isDrawingMode={drawingTool !== null}
+                  onDrawingStart={handleDrawingStart}
+                  onDrawingMove={handleDrawingMove}
+                  onDrawingEnd={handleDrawingEnd}
                 />
 
                 {!hasRenderableMap && (
