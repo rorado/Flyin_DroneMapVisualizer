@@ -506,6 +506,7 @@ export default function DroneMapVisualizer() {
       handleEraserAtPoint(transformedPoint);
     } else {
       // In pen mode, start a new stroke
+      setUndoneStrokes([]);
       setDrawnStrokes((prev) => [
         ...prev,
         {
@@ -526,6 +527,7 @@ export default function DroneMapVisualizer() {
     console.log("Erasing at point:", point, "with radius:", eraserRadius);
 
     setDrawnStrokes((prev) => {
+      const erasedStrokes: typeof prev = [];
       const newStrokes = prev.filter((stroke) => {
         // Check if any point in this stroke is close to the eraser point
         const shouldErase = stroke.points.some((strokePoint) => {
@@ -538,10 +540,16 @@ export default function DroneMapVisualizer() {
 
         if (shouldErase) {
           console.log("Erasing stroke with", stroke.points.length, "points");
+          erasedStrokes.push(stroke);
         }
 
         return !shouldErase;
       });
+
+      // Add erased strokes to undone so they can be redone
+      if (erasedStrokes.length > 0) {
+        setUndoneStrokes((prev) => [...prev, ...erasedStrokes]);
+      }
 
       console.log(
         "Strokes before:",
