@@ -597,8 +597,13 @@ export default function DroneMapVisualizer() {
   }
 
   function handleClearDrawing() {
-    setDrawnStrokes([]);
-    setUndoneStrokes([]);
+    setDrawnStrokes((prev) => {
+      // Save all strokes to redo buffer before clearing
+      if (prev.length > 0) {
+        setUndoneStrokes(prev);
+      }
+      return [];
+    });
   }
   function handleNodeHover(name: string) {
     setHoveredConnection(null);
