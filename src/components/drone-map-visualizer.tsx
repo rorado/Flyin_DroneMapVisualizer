@@ -468,20 +468,38 @@ export default function DroneMapVisualizer() {
   }
 
   function handleEraserAtPoint(point: { x: number; y: number }) {
-    const eraserRadius = brushSize * 0.8;
+    // Use a much larger radius for erasing in SVG coordinate space
+    // Brush sizes are 4-24, so we need to amplify for better erasing
+    const eraserRadius = brushSize * 5;
 
-    setDrawnStrokes((prev) =>
-      prev.filter((stroke) => {
+    console.log("Erasing at point:", point, "with radius:", eraserRadius);
+
+    setDrawnStrokes((prev) => {
+      const newStrokes = prev.filter((stroke) => {
         // Check if any point in this stroke is close to the eraser point
-        return !stroke.points.some((strokePoint) => {
+        const shouldErase = stroke.points.some((strokePoint) => {
           const distance = Math.sqrt(
             Math.pow(strokePoint.x - point.x, 2) +
               Math.pow(strokePoint.y - point.y, 2),
           );
           return distance < eraserRadius;
         });
-      }),
-    );
+
+        if (shouldErase) {
+          console.log("Erasing stroke with", stroke.points.length, "points");
+        }
+
+        return !shouldErase;
+      });
+
+      console.log(
+        "Strokes before:",
+        prev.length,
+        "Strokes after:",
+        newStrokes.length,
+      );
+      return newStrokes;
+    });
   }
 
   function handleDrawingMove(event: React.PointerEvent<SVGSVGElement>) {
