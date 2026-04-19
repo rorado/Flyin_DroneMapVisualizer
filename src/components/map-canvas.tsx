@@ -76,8 +76,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
     const hoveredNodeRadius = hoveredNodeDetails
       ? getNodeRadius(hoveredNodeDetails)
       : 0;
-    const infoCardWidth = Math.min(16, Math.max(10, viewBox.width * 0.42));
-    const infoCardHeight = hoveredNodeDetails?.maxDrones ? 3.8 : 3.2;
+    const infoCardWidth = Math.min(18, Math.max(12, viewBox.width * 0.48));
+    const infoCardHeight = hoveredNodeDetails?.maxDrones ? 4.8 : 4.2;
     const infoCardPadding = 0.35;
     const aboveY = hoveredNodeDetails
       ? hoveredNodeDetails.y - hoveredNodeRadius - infoCardHeight - 0.35
@@ -509,12 +509,30 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
             </text>
             <text
               x={infoCardX + 0.35}
-              y={infoCardY + 1.4}
+              y={infoCardY + 1.35}
               fill="rgba(191,219,254,0.95)"
-              fontSize={0.8}
+              fontSize={0.75}
             >
-              {`Zone: ${hoveredNodeDetails.zone} | Pos: (${hoveredDisplayX}, ${hoveredDisplayY})${hoveredNodeDetails.maxDrones ? ` | Max drones: ${hoveredNodeDetails.maxDrones}` : ""}`}
+              {`Zone: ${hoveredNodeDetails.zone}`}
             </text>
+            <text
+              x={infoCardX + 0.35}
+              y={infoCardY + 2.1}
+              fill="rgba(191,219,254,0.95)"
+              fontSize={0.75}
+            >
+              {`Pos: (${Math.round(hoveredDisplayX)}, ${Math.round(hoveredDisplayY)})`}
+            </text>
+            {hoveredNodeDetails.maxDrones ? (
+              <text
+                x={infoCardX + 0.35}
+                y={infoCardY + 2.85}
+                fill="rgba(191,219,254,0.95)"
+                fontSize={0.75}
+              >
+                {`Max drones: ${hoveredNodeDetails.maxDrones}`}
+              </text>
+            ) : null}
           </g>
         ) : null}
       </motion.svg>
