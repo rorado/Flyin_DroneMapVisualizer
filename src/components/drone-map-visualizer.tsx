@@ -93,6 +93,7 @@ export default function DroneMapVisualizer() {
     }>
   >([]);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const panPointerRef = useRef<{
     active: boolean;
@@ -437,6 +438,10 @@ export default function DroneMapVisualizer() {
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }
+
+  function handleToggleFullscreen() {
+    setIsFullscreen(!isFullscreen);
+  }
   function handleDrawingStart(event: React.PointerEvent<SVGSVGElement>) {
     if (!svgRef.current || drawingTool === null) return;
     setIsDrawing(true);
@@ -629,12 +634,26 @@ export default function DroneMapVisualizer() {
   const hasRenderableMap = nodes.length > 0;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_32%),linear-gradient(180deg,#020617_0%,#0f172a_100%)] text-slate-100">
-      <div className="mx-auto flex min-h-screen w-full max-w-8xl flex-col gap-6 px-4 py-6 lg:px-2">
+    <div
+      className={`${
+        isFullscreen
+          ? "fixed inset-0 z-50 min-h-screen bg-slate-950"
+          : "min-h-screen bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.18),_transparent_32%),linear-gradient(180deg,#020617_0%,#0f172a_100%)]"
+      } text-slate-100`}
+    >
+      <div
+        className={`mx-auto flex ${
+          isFullscreen
+            ? "h-screen w-screen flex-col"
+            : "min-h-screen w-full max-w-8xl flex-col gap-6"
+        } ${!isFullscreen ? "px-4 py-6 lg:px-2" : "p-0"}`}
+      >
         <motion.header
           initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-glow backdrop-blur-xl"
+          className={`rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-glow backdrop-blur-xl ${
+            isFullscreen ? "hidden" : ""
+          }`}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-3 space-x-5">
@@ -691,11 +710,17 @@ export default function DroneMapVisualizer() {
           </div>
         </motion.header>
 
-        <div className="grid flex-1 gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <div
+          className={`grid flex-1 gap-6 ${
+            isFullscreen ? "grid-cols-1" : "xl:grid-cols-[420px_minmax(0,1fr)]"
+          }`}
+        >
           <motion.section
             initial={{ opacity: 0, x: -18 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex h-full flex-col gap-6 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-glow backdrop-blur-xl"
+            className={`flex h-full flex-col gap-6 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-glow backdrop-blur-xl ${
+              isFullscreen ? "hidden" : ""
+            }`}
           >
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
@@ -889,7 +914,11 @@ export default function DroneMapVisualizer() {
           <motion.section
             initial={{ opacity: 0, x: 18 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex min-h-[820px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-slate-950/70 shadow-glow backdrop-blur-xl"
+            className={`flex ${
+              isFullscreen
+                ? "h-screen w-screen flex-col rounded-none border-0"
+                : "min-h-[820px] flex-col overflow-hidden rounded-3xl border border-white/10"
+            } bg-slate-950/70 shadow-glow backdrop-blur-xl`}
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
               <div>
@@ -1005,6 +1034,19 @@ export default function DroneMapVisualizer() {
 
                 <button
                   type="button"
+                  onClick={handleToggleFullscreen}
+                  className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                    isFullscreen
+                      ? "border border-purple-400 bg-purple-400/20 text-purple-100"
+                      : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                  }`}
+                  title="Toggle fullscreen"
+                >
+                  {isFullscreen ? "⛶ Exit fullscreen" : "⛶ Fullscreen"}
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleCopyJson}
                   className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
                 >
@@ -1020,8 +1062,20 @@ export default function DroneMapVisualizer() {
               </div>
             </div>
 
-            <div className="grid flex-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]">
-              <div className="relative min-h-[720px] overflow-hidden rounded-3xl border border-white/10 bg-slate-950/90">
+            <div
+              className={`grid flex-1 ${
+                isFullscreen
+                  ? "h-full w-full grid-cols-1 gap-0 p-0"
+                  : "gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_260px]"
+              }`}
+            >
+              <div
+                className={`relative ${
+                  isFullscreen
+                    ? "h-full w-full overflow-hidden rounded-none border-0"
+                    : "min-h-[720px] overflow-hidden rounded-3xl border border-white/10"
+                } bg-slate-950/90`}
+              >
                 <MapCanvas
                   ref={svgRef}
                   nodes={nodes}
@@ -1071,7 +1125,7 @@ export default function DroneMapVisualizer() {
                 )}
               </div>
 
-              <div className="space-y-4">
+              <div className={`space-y-4 ${isFullscreen ? "hidden" : ""}`}>
                 <LegendCard />
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}

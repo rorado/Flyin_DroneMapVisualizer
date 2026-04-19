@@ -394,10 +394,19 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
               <motion.g
                 key={nodeDomId}
                 initial={{ opacity: 0, scale: 0.7 }}
-                animate={{ opacity: isActive ? 1 : 0.4, scale: 1 }}
-                whileHover={{ scale: 1.05 }}
-                onMouseEnter={() => onNodeHover(node.name)}
-                onMouseLeave={onNodeLeave}
+                animate={{
+                  opacity: isActive ? 1 : 0.4,
+                  scale: 1,
+                  transition: { duration: 0.3 },
+                }}
+                whileHover={{
+                  scale: 1.08,
+                  transition: {
+                    duration: 0.3,
+                  },
+                }}
+                // onMouseEnter={() => onNodeHover(node.name)}
+                // onHoverEnd={onNodeLeave}
                 onClick={() => onNodeClick(node.name)}
                 className="cursor-pointer"
               >
