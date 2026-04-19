@@ -92,6 +92,14 @@ export default function DroneMapVisualizer() {
       isEraser: boolean;
     }>
   >([]);
+  const [undoneStrokes, setUndoneStrokes] = useState<
+    Array<{
+      points: Array<{ x: number; y: number }>;
+      color: string;
+      size: number;
+      isEraser: boolean;
+    }>
+  >([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -303,19 +311,32 @@ export default function DroneMapVisualizer() {
     }
   }, [clampedPan, pan.x, pan.y]);
 
-  // Keyboard shortcuts (Ctrl+Z / Cmd+Z for undo)
+  // Keyboard shortcuts (Ctrl+Z for undo, Ctrl+Shift+Z for redo)
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      // Check for Ctrl+Z (Windows/Linux) or Cmd+Z (Mac)
-      if ((event.ctrlKey || event.metaKey) && event.key === "z") {
+      // Check for Ctrl+Z (Windows/Linux) or Cmd+Z (Mac) for undo
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key === "z" &&
+        !event.shiftKey
+      ) {
         event.preventDefault();
         handleUndoDrawing();
+      }
+      // Check for Ctrl+Shift+Z (Windows/Linux) or Cmd+Shift+Z (Mac) for redo
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key === "z" &&
+        event.shiftKey
+      ) {
+        event.preventDefault();
+        handleRedoDrawing();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [drawnStrokes]);
+  }, [drawnStrokes, undoneStrokes]);
 
   // Handle fullscreen class
   useEffect(() => {
@@ -329,7 +350,21 @@ export default function DroneMapVisualizer() {
   }, [isFullscreen]);
 
   function handleUndoDrawing() {
-    setDrawnStrokes((prev) => prev.slice(0, -1));
+    setDrawnStrokes((prev) => {
+      if (prev.length === 0) return prev;
+      const lastStroke = prev[prev.length - 1];
+      setUndoneStrokes((undone) => [...undone, lastStroke]);
+      return prev.slice(0, -1);
+    });
+  }
+
+  function handleRedoDrawing() {
+    setUndoneStrokes((prev) => {
+      if (prev.length === 0) return prev;
+      const lastUndoneStroke = prev[prev.length - 1];
+      setDrawnStrokes((drawn) => [...drawn, lastUndoneStroke]);
+      return prev.slice(0, -1);
+    });
   }
 
   function handleMapWheel(event: React.WheelEvent<SVGSVGElement>) {
@@ -555,6 +590,7 @@ export default function DroneMapVisualizer() {
 
   function handleClearDrawing() {
     setDrawnStrokes([]);
+    setUndoneStrokes([]);
   }
   function handleNodeHover(name: string) {
     setHoveredConnection(null);
@@ -1033,6 +1069,15 @@ export default function DroneMapVisualizer() {
                     title="Undo last stroke (Ctrl+Z)"
                   >
                     ↶ Undo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRedoDrawing}
+                    disabled={undoneStrokes.length === 0}
+                    className="rounded-2xl border border-green-400/30 bg-green-400/10 px-4 py-2 text-sm font-semibold text-green-100 transition hover:bg-green-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Redo last stroke (Ctrl+Shift+Z)"
+                  >
+                    ↷ Redo
                   </button>
                   <button
                     type="button"
