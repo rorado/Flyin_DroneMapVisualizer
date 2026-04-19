@@ -405,9 +405,15 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     duration: 0.3,
                   },
                 }}
-                // onMouseEnter={() => onNodeHover(node.name)}
-                // onMouseLeave={() => onNodeLeave()}
-                onClick={() => onNodeClick(node.name)}
+                onClick={() => {
+                  onNodeClick(node.name);
+                  if (hoveredNode === node.name) {
+                    onNodeLeave();
+                  } else {
+                    onNodeLeave();
+                    onNodeHover(node.name);
+                  }
+                }}
                 className="cursor-pointer"
               >
                 {isPathNode && (

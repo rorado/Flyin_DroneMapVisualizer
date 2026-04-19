@@ -653,11 +653,11 @@ export default function DroneMapVisualizer() {
       } text-slate-100`}
     >
       <div
-        className={`mx-auto flex ${
+        className={`flex ${
           isFullscreen
-            ? "h-screen w-screen flex-col"
-            : "min-h-screen w-full max-w-8xl flex-col gap-6"
-        } ${!isFullscreen ? "px-4 py-6 lg:px-2" : "p-0"}`}
+            ? "fixed inset-0 h-screen w-screen flex-col p-0"
+            : "mx-auto min-h-screen w-full max-w-8xl flex-col gap-6 px-4 py-6 lg:px-2"
+        }`}
       >
         <motion.header
           initial={{ opacity: 0, y: -12 }}
