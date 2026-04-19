@@ -302,6 +302,24 @@ export default function DroneMapVisualizer() {
     }
   }, [clampedPan, pan.x, pan.y]);
 
+  // Keyboard shortcuts (Ctrl+Z / Cmd+Z for undo)
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      // Check for Ctrl+Z (Windows/Linux) or Cmd+Z (Mac)
+      if ((event.ctrlKey || event.metaKey) && event.key === "z") {
+        event.preventDefault();
+        handleUndoDrawing();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [drawnStrokes]);
+
+  function handleUndoDrawing() {
+    setDrawnStrokes((prev) => prev.slice(0, -1));
+  }
+
   function handleMapWheel(event: React.WheelEvent<SVGSVGElement>) {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -949,6 +967,15 @@ export default function DroneMapVisualizer() {
                     <option value={0.25}>Size: 20px</option>
                     <option value={1}>Size: 24px</option>
                   </select>
+                  <button
+                    type="button"
+                    onClick={handleUndoDrawing}
+                    disabled={drawnStrokes.length === 0}
+                    className="rounded-2xl border border-blue-400/30 bg-blue-400/10 px-4 py-2 text-sm font-semibold text-blue-100 transition hover:bg-blue-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Undo last stroke (Ctrl+Z)"
+                  >
+                    ↶ Undo
+                  </button>
                   <button
                     type="button"
                     onClick={handleClearDrawing}
