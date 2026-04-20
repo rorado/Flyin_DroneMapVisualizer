@@ -1337,8 +1337,8 @@ export default function DroneMapVisualizer() {
                   )
                 ) : (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400">
-                    Paste a map configuration and click "Render map" to
-                    visualize.
+                    Paste a map configuration and click &quot;Render map&quot;
+                    to visualize.
                   </div>
                 )}
               </div>
