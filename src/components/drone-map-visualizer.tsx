@@ -1016,8 +1016,10 @@ export default function DroneMapVisualizer() {
                       );
 
                       // Calculate total turns based on zone types
+                      // Start zone has 0 cost, count from zone 1 onwards
                       let totalTurns = 0;
-                      for (const zoneName of path) {
+                      for (let i = 1; i < path.length; i++) {
+                        const zoneName = path[i];
                         const node = nodeByName.get(zoneName);
                         if (node) {
                           if (node.zone === "blocked") {
