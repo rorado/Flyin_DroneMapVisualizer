@@ -1400,7 +1400,17 @@ export default function DroneMapVisualizer() {
 
               <div className={`space-y-4 ${isFullscreen ? "hidden" : ""}`}>
                 {selectedZoneForDetails &&
-                nodeByName.get(selectedZoneForDetails) ? (
+                (() => {
+                  const zoneNode =
+                    parsed.startHub?.name === selectedZoneForDetails
+                      ? parsed.startHub
+                      : parsed.endHub?.name === selectedZoneForDetails
+                        ? parsed.endHub
+                        : parsed.hubs.find(
+                            (hub) => hub.name === selectedZoneForDetails,
+                          );
+                  return !!zoneNode;
+                })() ? (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1425,46 +1435,55 @@ export default function DroneMapVisualizer() {
                     </div>
                     <dl className="space-y-3 text-sm">
                       {(() => {
-                        const node = nodeByName.get(selectedZoneForDetails);
-                        if (!node) return null;
+                        const zoneNode =
+                          parsed.startHub?.name === selectedZoneForDetails
+                            ? parsed.startHub
+                            : parsed.endHub?.name === selectedZoneForDetails
+                              ? parsed.endHub
+                              : parsed.hubs.find(
+                                  (hub) => hub.name === selectedZoneForDetails,
+                                );
+                        if (!zoneNode) return null;
                         return (
                           <>
                             <div>
                               <dt className="text-slate-400">Type</dt>
                               <dd className="text-cyan-100 font-medium capitalize">
-                                {node.role}
+                                {zoneNode.role}
                               </dd>
                             </div>
                             <div>
                               <dt className="text-slate-400">Zone</dt>
                               <dd className="text-cyan-100 font-medium capitalize">
-                                {node.zone}
+                                {zoneNode.zone}
                               </dd>
                             </div>
                             <div>
                               <dt className="text-slate-400">Coordinates</dt>
                               <dd className="text-cyan-100 font-medium">
-                                ({node.x}, {node.y})
+                                ({zoneNode.x}, {zoneNode.y})
                               </dd>
                             </div>
-                            {node.maxDrones && (
+                            {zoneNode.maxDrones && (
                               <div>
                                 <dt className="text-slate-400">Max Drones</dt>
                                 <dd className="text-cyan-100 font-medium">
-                                  {node.maxDrones}
+                                  {zoneNode.maxDrones}
                                 </dd>
                               </div>
                             )}
-                            {node.color && (
+                            {zoneNode.color && (
                               <div>
                                 <dt className="text-slate-400">Color</dt>
                                 <dd className="flex items-center gap-2">
                                   <div
                                     className="w-4 h-4 rounded"
-                                    style={{ backgroundColor: node.color }}
+                                    style={{
+                                      backgroundColor: zoneNode.color,
+                                    }}
                                   />
                                   <span className="text-cyan-100 font-medium">
-                                    {node.color}
+                                    {zoneNode.color}
                                   </span>
                                 </dd>
                               </div>
