@@ -19,6 +19,7 @@ import {
   SummaryCard,
   SummaryLine,
 } from "@/components/map-side-panels";
+import { SAMPLE_CATEGORIES, getSamplesByCategory } from "@/lib/samples";
 
 function formatIssueLocation(lineNumber: number) {
   return lineNumber > 0 ? `Line ${lineNumber}` : "File";
@@ -65,9 +66,10 @@ function getZoomForCellSpacing(
 }
 
 export default function DroneMapVisualizer() {
-  const [draftText, setDraftText] = useState<string>(SAMPLE_MAPS.easy);
-  const [appliedText, setAppliedText] = useState<string>(SAMPLE_MAPS.easy);
-  const [sampleKey, setSampleKey] = useState<SampleKey>("easy");
+  const [draftText, setDraftText] = useState<string>(SAMPLE_MAPS["easy-1"]);
+  const [appliedText, setAppliedText] = useState<string>("");
+  const [sampleKey, setSampleKey] = useState<SampleKey>("easy-1");
+  const [selectedCategory, setSelectedCategory] = useState<string>("Easy");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredConnection, setHoveredConnection] = useState<string | null>(
     null,
@@ -102,6 +104,11 @@ export default function DroneMapVisualizer() {
   >([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pathDisplayMode, setPathDisplayMode] = useState<"all" | "shortest">(
+    "all",
+  );
+  const [shouldCalculatePaths, setShouldCalculatePaths] = useState(false);
+  const [shouldDisplayMap, setShouldDisplayMap] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const panPointerRef = useRef<{
     active: boolean;
@@ -185,7 +192,12 @@ export default function DroneMapVisualizer() {
   }, [hoveredConnection, hoveredNode, parsed.connections]);
 
   const allPathsFromHoveredToGoal = useMemo(() => {
-    if (!parsed.startHub || !parsed.endHub || parsed.connections.length === 0) {
+    if (
+      !shouldCalculatePaths ||
+      !parsed.startHub ||
+      !parsed.endHub ||
+      parsed.connections.length === 0
+    ) {
       return [] as string[][];
     }
 
@@ -195,7 +207,12 @@ export default function DroneMapVisualizer() {
       parsed.connections,
       10000,
     );
-  }, [parsed.startHub, parsed.endHub, parsed.connections]);
+  }, [
+    shouldCalculatePaths,
+    parsed.startHub,
+    parsed.endHub,
+    parsed.connections,
+  ]);
 
   const pathFromHoveredToGoal = useMemo(() => {
     // If a specific path is selected, use that entire path
@@ -272,6 +289,23 @@ export default function DroneMapVisualizer() {
     // When no path is selected, return null (no green connections on hover)
     return null;
   }, [selectedPathIndex, allPathsFromHoveredToGoal, parsed.connections]);
+
+  const displayedPaths = useMemo(() => {
+    if (pathDisplayMode === "all") {
+      return allPathsFromHoveredToGoal;
+    } else {
+      // Find the shortest path
+      if (allPathsFromHoveredToGoal.length === 0) return [];
+      let shortestPath = allPathsFromHoveredToGoal[0];
+      for (const path of allPathsFromHoveredToGoal) {
+        if (path.length < shortestPath.length) {
+          shortestPath = path;
+        }
+      }
+      return [shortestPath];
+    }
+  }, [pathDisplayMode, allPathsFromHoveredToGoal]);
+
   const summary = useMemo(() => {
     return {
       drones: parsed.nbDrones ?? 0,
@@ -793,17 +827,45 @@ export default function DroneMapVisualizer() {
                   </p>
                 </div>
                 <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                  Sample
+                  Category
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {SAMPLE_CATEGORIES.map((category) => (
+                      <button
+                        key={category}
+                        onClick={() => {
+                          setSelectedCategory(category);
+                          const mapsInCategory = getSamplesByCategory(category);
+                          if (mapsInCategory.length > 0) {
+                            const firstMapKey = mapsInCategory[0].value;
+                            setSampleKey(firstMapKey);
+                            setDraftText(SAMPLE_MAPS[firstMapKey]);
+                          }
+                        }}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                          selectedCategory === category
+                            ? "border border-cyan-400 bg-cyan-400/20 text-cyan-100"
+                            : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                        }`}
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </label>
+                <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                  Map
                   <select
                     value={sampleKey}
-                    onChange={(event) =>
-                      setSampleKey(event.target.value as SampleKey)
-                    }
+                    onChange={(event) => {
+                      const key = event.target.value as SampleKey;
+                      setSampleKey(key);
+                      setDraftText(SAMPLE_MAPS[key]);
+                    }}
                     className="mt-2 block w-full rounded-2xl border border-white/10 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/70"
                   >
-                    {SAMPLE_OPTIONS.map((sample) => (
+                    {getSamplesByCategory(selectedCategory).map((sample) => (
                       <option key={sample.value} value={sample.value}>
-                        {sample.label}
+                        {sample.label} - {sample.description}
                       </option>
                     ))}
                   </select>
@@ -814,17 +876,11 @@ export default function DroneMapVisualizer() {
                 <button
                   type="button"
                   onClick={() => {
-                    const nextSample = SAMPLE_MAPS[sampleKey];
-                    setDraftText(nextSample);
-                    setAppliedText(nextSample);
+                    setAppliedText(draftText);
+                    setShouldDisplayMap(false);
+                    setShouldCalculatePaths(false);
+                    setSelectedPathIndex(null);
                   }}
-                  className="rounded-2xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
-                >
-                  Load sample
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAppliedText(draftText)}
                   className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
                 >
                   Render map
@@ -898,77 +954,145 @@ export default function DroneMapVisualizer() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="font-semibold text-white">
-                    All Possible Paths
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Click to highlight, click again to hide
-                  </p>
-                </div>
-                <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300">
-                  {allPathsFromHoveredToGoal.length} paths
-                </span>
-              </div>
-
-              <div className="max-h-[260px] space-y-2 overflow-y-auto">
-                {allPathsFromHoveredToGoal.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-400/20 bg-slate-400/10 px-4 py-3 text-sm text-slate-300">
-                    No paths found
+            {shouldCalculatePaths ? (
+              <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="font-semibold text-white">
+                      {pathDisplayMode === "all"
+                        ? "All Possible Paths"
+                        : "Shortest Path"}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Click to highlight, click again to hide
+                    </p>
                   </div>
-                ) : (
-                  allPathsFromHoveredToGoal.map((path, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        console.log(
-                          `Path ${idx} clicked, current selectedPathIndex:`,
-                          selectedPathIndex,
-                          "allPathsFromHoveredToGoal.length:",
-                          allPathsFromHoveredToGoal.length,
-                        );
-                        setSelectedPathIndex(
-                          selectedPathIndex === idx ? null : idx,
-                        );
-                      }}
-                      className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono break-words transition ${
-                        selectedPathIndex === idx
-                          ? "border-emerald-400 bg-emerald-400/20 text-emerald-100 ring-1 ring-emerald-400"
-                          : "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 text-slate-100 hover:bg-emerald-400/15 hover:border-emerald-400/50"
-                      }`}
-                    >
-                      <div
-                        className={`font-semibold mb-1 ${selectedPathIndex === idx ? "text-emerald-300" : "text-emerald-300"}`}
-                      >
-                        Path {idx + 1}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1 whitespace-normal">
-                        {path.map((zone, i) => (
-                          <div key={i} className="flex items-center gap-1">
-                            <span
-                              className={`rounded px-2 py-0.5 font-medium ${
-                                selectedPathIndex === idx
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-slate-800 text-cyan-200"
-                              }`}
-                            >
-                              {zone}
-                            </span>
-                            {i < path.length - 1 && (
-                              <span className="text-emerald-400 font-bold">
-                                →
-                              </span>
-                            )}
+                  <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300">
+                    {displayedPaths.length}{" "}
+                    {pathDisplayMode === "all" ? "paths" : "path"}
+                  </span>
+                </div>
+
+                <div className="flex gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("all");
+                    }}
+                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      pathDisplayMode === "all"
+                        ? "border border-cyan-400 bg-cyan-400/20 text-cyan-100"
+                        : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    }`}
+                  >
+                    All Paths
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("shortest");
+                    }}
+                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      pathDisplayMode === "shortest"
+                        ? "border border-amber-400 bg-amber-400/20 text-amber-100"
+                        : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    }`}
+                  >
+                    Shortest Path
+                  </button>
+                </div>
+
+                <div className="max-h-[260px] space-y-2 overflow-y-auto">
+                  {displayedPaths.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-400/20 bg-slate-400/10 px-4 py-3 text-sm text-slate-300">
+                      No paths found
+                    </div>
+                  ) : (
+                    displayedPaths.map((path, displayIdx) => {
+                      const originalIdx = allPathsFromHoveredToGoal.findIndex(
+                        (p) => p === path,
+                      );
+                      return (
+                        <button
+                          key={displayIdx}
+                          onClick={() => {
+                            setSelectedPathIndex(
+                              selectedPathIndex === originalIdx
+                                ? null
+                                : originalIdx,
+                            );
+                          }}
+                          className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono break-words transition ${
+                            selectedPathIndex === originalIdx
+                              ? "border-emerald-400 bg-emerald-400/20 text-emerald-100 ring-1 ring-emerald-400"
+                              : "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 text-slate-100 hover:bg-emerald-400/15 hover:border-emerald-400/50"
+                          }`}
+                        >
+                          <div
+                            className={`font-semibold mb-1 ${selectedPathIndex === originalIdx ? "text-emerald-300" : "text-emerald-300"}`}
+                          >
+                            {pathDisplayMode === "shortest"
+                              ? "Shortest Path"
+                              : `Path ${originalIdx + 1}`}{" "}
+                            ({path.length - 1} turns)
                           </div>
-                        ))}
-                      </div>
-                    </button>
-                  ))
-                )}
+                          <div className="flex flex-wrap items-center gap-1 whitespace-normal">
+                            {path.map((zone, i) => (
+                              <div key={i} className="flex items-center gap-1">
+                                <span
+                                  className={`rounded px-2 py-0.5 font-medium ${
+                                    selectedPathIndex === originalIdx
+                                      ? "bg-emerald-600 text-white"
+                                      : "bg-slate-800 text-cyan-200"
+                                  }`}
+                                >
+                                  {zone}
+                                </span>
+                                {i < path.length - 1 && (
+                                  <span className="text-emerald-400 font-bold">
+                                    →
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4 flex flex-col items-center justify-center">
+                <p className="text-sm text-slate-300 text-center mb-4">
+                  Click below to calculate and display paths
+                </p>
+                <div className="flex gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("all");
+                    }}
+                    className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition border border-cyan-400 bg-cyan-400/20 text-cyan-100 hover:bg-cyan-400/30"
+                  >
+                    Show All Paths
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("shortest");
+                    }}
+                    className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition border border-amber-400 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30"
+                  >
+                    Show Shortest Path
+                  </button>
+                </div>
+              </div>
+            )}
           </motion.section>
 
           <motion.section
@@ -1145,52 +1269,77 @@ export default function DroneMapVisualizer() {
                     : "min-h-[720px] overflow-hidden rounded-3xl border border-white/10"
                 } bg-slate-950/90`}
               >
-                <MapCanvas
-                  ref={svgRef}
-                  nodes={nodes}
-                  connections={parsed.connections}
-                  viewBox={interactiveViewBox}
-                  nodeByName={nodeByName}
-                  coordinateScale={COORDINATE_SPACING_FACTOR}
-                  hoveredNode={hoveredNode}
-                  hoveredConnection={hoveredConnection}
-                  selectedZone={selectedZone}
-                  connectedNodeNames={connectedNodeNames}
-                  pathNodeNames={pathNodeNames}
-                  pathConnectionKeys={pathConnectionKeys}
-                  isPanning={isPanning}
-                  onNodeHover={handleNodeHover}
-                  onNodeLeave={handleNodeLeave}
-                  onNodeClick={handleNodeClick}
-                  onConnectionHover={handleConnectionHover}
-                  onConnectionLeave={handleConnectionLeave}
-                  onMapWheel={handleMapWheel}
-                  onMapPointerDown={handleMapPointerDown}
-                  onMapPointerMove={handleMapPointerMove}
-                  onMapPointerEnd={handleMapPointerEnd}
-                  drawnStrokes={drawnStrokes}
-                  isDrawingMode={drawingTool !== null}
-                  onDrawingStart={handleDrawingStart}
-                  onDrawingMove={handleDrawingMove}
-                  onDrawingEnd={handleDrawingEnd}
-                />
+                {appliedText ? (
+                  shouldDisplayMap ? (
+                    <>
+                      <MapCanvas
+                        ref={svgRef}
+                        nodes={nodes}
+                        connections={parsed.connections}
+                        viewBox={interactiveViewBox}
+                        nodeByName={nodeByName}
+                        coordinateScale={COORDINATE_SPACING_FACTOR}
+                        hoveredNode={hoveredNode}
+                        hoveredConnection={hoveredConnection}
+                        selectedZone={selectedZone}
+                        connectedNodeNames={connectedNodeNames}
+                        pathNodeNames={pathNodeNames}
+                        pathConnectionKeys={pathConnectionKeys}
+                        isPanning={isPanning}
+                        onNodeHover={handleNodeHover}
+                        onNodeLeave={handleNodeLeave}
+                        onNodeClick={handleNodeClick}
+                        onConnectionHover={handleConnectionHover}
+                        onConnectionLeave={handleConnectionLeave}
+                        onMapWheel={handleMapWheel}
+                        onMapPointerDown={handleMapPointerDown}
+                        onMapPointerMove={handleMapPointerMove}
+                        onMapPointerEnd={handleMapPointerEnd}
+                        drawnStrokes={drawnStrokes}
+                        isDrawingMode={drawingTool !== null}
+                        onDrawingStart={handleDrawingStart}
+                        onDrawingMove={handleDrawingMove}
+                        onDrawingEnd={handleDrawingEnd}
+                      />
 
-                {!hasRenderableMap && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400 backdrop-blur-sm">
-                    Add a valid map with start and end hubs to see the
-                    visualization.
+                      {!hasRenderableMap && (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400 ">
+                          Add a valid map with start and end hubs to see the
+                          visualization.
+                        </div>
+                      )}
+
+                      {blockedNodeMessage && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          className="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-center rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-100 backdrop-blur-sm"
+                        >
+                          {blockedNodeMessage}
+                        </motion.div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950/70 px-6 text-center">
+                      <p className="text-sm text-slate-300">
+                        Map configuration ready. Click below to display the
+                        visualization.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShouldDisplayMap(true)}
+                        className="rounded-2xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+                      >
+                        Show Map
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400">
+                    Paste a map configuration and click "Render map" to
+                    visualize.
                   </div>
-                )}
-
-                {blockedNodeMessage && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-center rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-100 backdrop-blur-sm"
-                  >
-                    {blockedNodeMessage}
-                  </motion.div>
                 )}
               </div>
 
