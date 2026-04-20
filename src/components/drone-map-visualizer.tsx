@@ -1014,6 +1014,24 @@ export default function DroneMapVisualizer() {
                       const originalIdx = allPathsFromHoveredToGoal.findIndex(
                         (p) => p === path,
                       );
+
+                      // Calculate total turns based on zone types
+                      let totalTurns = 0;
+                      for (const zoneName of path) {
+                        const node = nodeByName.get(zoneName);
+                        if (node) {
+                          if (node.zone === "blocked") {
+                            totalTurns = -1; // Invalid path
+                            break;
+                          } else if (node.zone === "restricted") {
+                            totalTurns += 2;
+                          } else {
+                            // normal and priority cost 1 turn each
+                            totalTurns += 1;
+                          }
+                        }
+                      }
+
                       return (
                         <button
                           key={displayIdx}
@@ -1036,7 +1054,11 @@ export default function DroneMapVisualizer() {
                             {pathDisplayMode === "shortest"
                               ? "Shortest Path"
                               : `Path ${originalIdx + 1}`}{" "}
-                            ({path.length} turns)
+                            (
+                            {totalTurns === -1
+                              ? "invalid"
+                              : `${totalTurns} turns`}
+                            )
                           </div>
                           <div className="flex flex-wrap items-center gap-1 whitespace-normal">
                             {path.map((zone, i) => (
