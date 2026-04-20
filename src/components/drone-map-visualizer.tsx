@@ -1036,7 +1036,7 @@ export default function DroneMapVisualizer() {
                             {pathDisplayMode === "shortest"
                               ? "Shortest Path"
                               : `Path ${originalIdx + 1}`}{" "}
-                            ({path.length - 1} turns)
+                            ({path.length} turns)
                           </div>
                           <div className="flex flex-wrap items-center gap-1 whitespace-normal">
                             {path.map((zone, i) => (
