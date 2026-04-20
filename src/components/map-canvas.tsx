@@ -316,7 +316,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   strokeWidth={
                     isHovered || isPathConnection ? lineWidth * 1.8 : lineWidth
                   }
-                  opacity={isRelated ? 1 : 0.18}
+                  opacity={isRelated ? 1 : 0.4}
                   strokeLinecap="round"
                   filter={isHovered ? "url(#softGlow)" : undefined}
                   onMouseEnter={() => onConnectionHover(connection.id)}

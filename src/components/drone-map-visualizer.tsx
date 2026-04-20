@@ -678,7 +678,9 @@ export default function DroneMapVisualizer() {
   }
 
   function handleNodeClick(name: string) {
-    setSelectedZoneForDetails(selectedZoneForDetails === name ? null : name);
+    const isToggling = selectedZoneForDetails === name;
+    setSelectedZoneForDetails(isToggling ? null : name);
+    setSelectedZone(isToggling ? null : name);
   }
 
   function handleConnectionHover(id: string) {
@@ -1372,94 +1374,6 @@ export default function DroneMapVisualizer() {
                           {blockedNodeMessage}
                         </motion.div>
                       )}
-
-                      {selectedZoneForDetails &&
-                        nodeByName.get(selectedZoneForDetails) && (
-                          <div
-                            onClick={() => setSelectedZoneForDetails(null)}
-                            className="absolute inset-0"
-                          >
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute inset-x-6 top-1/2 -translate-y-1/2 max-w-sm rounded-2xl border border-cyan-400/30 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-xl"
-                            >
-                              <div className="mb-4">
-                                <h3 className="text-lg font-bold text-white">
-                                  {selectedZoneForDetails}
-                                </h3>
-                                <p className="text-xs text-slate-400 mt-1">
-                                  Zone Details
-                                </p>
-                              </div>
-                              <dl className="space-y-3 text-sm">
-                                {(() => {
-                                  const node = nodeByName.get(
-                                    selectedZoneForDetails,
-                                  );
-                                  if (!node) return null;
-                                  return (
-                                    <>
-                                      <div>
-                                        <dt className="text-slate-400">Type</dt>
-                                        <dd className="text-cyan-100 font-medium capitalize">
-                                          {node.role}
-                                        </dd>
-                                      </div>
-                                      <div>
-                                        <dt className="text-slate-400">Zone</dt>
-                                        <dd className="text-cyan-100 font-medium capitalize">
-                                          {node.zone}
-                                        </dd>
-                                      </div>
-                                      <div>
-                                        <dt className="text-slate-400">
-                                          Coordinates
-                                        </dt>
-                                        <dd className="text-cyan-100 font-medium">
-                                          ({node.x}, {node.y})
-                                        </dd>
-                                      </div>
-                                      {node.maxDrones && (
-                                        <div>
-                                          <dt className="text-slate-400">
-                                            Max Drones
-                                          </dt>
-                                          <dd className="text-cyan-100 font-medium">
-                                            {node.maxDrones}
-                                          </dd>
-                                        </div>
-                                      )}
-                                      {node.color && (
-                                        <div>
-                                          <dt className="text-slate-400">
-                                            Color
-                                          </dt>
-                                          <dd className="flex items-center gap-2">
-                                            <div
-                                              className="w-4 h-4 rounded"
-                                              style={{
-                                                backgroundColor: node.color,
-                                              }}
-                                            />
-                                            <span className="text-cyan-100 font-medium">
-                                              {node.color}
-                                            </span>
-                                          </dd>
-                                        </div>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </dl>
-                              <p className="mt-4 text-xs text-slate-500 text-center">
-                                Click outside to close
-                              </p>
-                            </motion.div>
-                          </div>
-                        )}
                     </>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950/70 px-6 text-center">
@@ -1485,7 +1399,84 @@ export default function DroneMapVisualizer() {
               </div>
 
               <div className={`space-y-4 ${isFullscreen ? "hidden" : ""}`}>
-                <LegendCard />
+                {selectedZoneForDetails &&
+                nodeByName.get(selectedZoneForDetails) ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-3xl border border-cyan-400/30 bg-slate-900/80 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="font-semibold text-white">
+                          {selectedZoneForDetails}
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Zone Details
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setSelectedZoneForDetails(null)}
+                        className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+                        title="Close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <dl className="space-y-3 text-sm">
+                      {(() => {
+                        const node = nodeByName.get(selectedZoneForDetails);
+                        if (!node) return null;
+                        return (
+                          <>
+                            <div>
+                              <dt className="text-slate-400">Type</dt>
+                              <dd className="text-cyan-100 font-medium capitalize">
+                                {node.role}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-slate-400">Zone</dt>
+                              <dd className="text-cyan-100 font-medium capitalize">
+                                {node.zone}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-slate-400">Coordinates</dt>
+                              <dd className="text-cyan-100 font-medium">
+                                ({node.x}, {node.y})
+                              </dd>
+                            </div>
+                            {node.maxDrones && (
+                              <div>
+                                <dt className="text-slate-400">Max Drones</dt>
+                                <dd className="text-cyan-100 font-medium">
+                                  {node.maxDrones}
+                                </dd>
+                              </div>
+                            )}
+                            {node.color && (
+                              <div>
+                                <dt className="text-slate-400">Color</dt>
+                                <dd className="flex items-center gap-2">
+                                  <div
+                                    className="w-4 h-4 rounded"
+                                    style={{ backgroundColor: node.color }}
+                                  />
+                                  <span className="text-cyan-100 font-medium">
+                                    {node.color}
+                                  </span>
+                                </dd>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </dl>
+                  </motion.div>
+                ) : (
+                  <LegendCard />
+                )}
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
