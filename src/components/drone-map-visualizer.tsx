@@ -109,6 +109,9 @@ export default function DroneMapVisualizer() {
   );
   const [shouldCalculatePaths, setShouldCalculatePaths] = useState(false);
   const [shouldDisplayMap, setShouldDisplayMap] = useState(false);
+  const [selectedZoneForDetails, setSelectedZoneForDetails] = useState<
+    string | null
+  >(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const panPointerRef = useRef<{
     active: boolean;
@@ -294,17 +297,43 @@ export default function DroneMapVisualizer() {
     if (pathDisplayMode === "all") {
       return allPathsFromHoveredToGoal;
     } else {
-      // Find the shortest path
+      // Find all paths with minimum turns
       if (allPathsFromHoveredToGoal.length === 0) return [];
-      let shortestPath = allPathsFromHoveredToGoal[0];
-      for (const path of allPathsFromHoveredToGoal) {
-        if (path.length < shortestPath.length) {
-          shortestPath = path;
+
+      // Calculate turns for each path
+      const pathTurns = allPathsFromHoveredToGoal.map((path) => {
+        let totalTurns = 0;
+        for (let i = 1; i < path.length; i++) {
+          const node = nodeByName.get(path[i]);
+          if (node) {
+            if (node.zone === "blocked") {
+              return -1; // Invalid path
+            } else if (node.zone === "restricted") {
+              totalTurns += 2;
+            } else {
+              totalTurns += 1;
+            }
+          }
+        }
+        return totalTurns;
+      });
+
+      // Find minimum turns (excluding invalid paths)
+      let minTurns = Infinity;
+      for (const turns of pathTurns) {
+        if (turns >= 0 && turns < minTurns) {
+          minTurns = turns;
         }
       }
-      return [shortestPath];
+
+      // Return all paths with minimum turns
+      const shortestPaths = allPathsFromHoveredToGoal.filter(
+        (_, idx) => pathTurns[idx] === minTurns,
+      );
+
+      return shortestPaths.length > 0 ? shortestPaths : [];
     }
-  }, [pathDisplayMode, allPathsFromHoveredToGoal]);
+  }, [pathDisplayMode, allPathsFromHoveredToGoal, nodeByName]);
 
   const summary = useMemo(() => {
     return {
@@ -641,7 +670,7 @@ export default function DroneMapVisualizer() {
   }
   function handleNodeHover(name: string) {
     setHoveredConnection(null);
-    setHoveredNode(name);
+    // setHoveredNode(name);
   }
 
   function handleNodeLeave() {
@@ -649,8 +678,7 @@ export default function DroneMapVisualizer() {
   }
 
   function handleNodeClick(name: string) {
-    console.log(`Node clicked: ${name}, current selectedZone:`, selectedZone);
-    setSelectedZone(selectedZone === name ? null : name);
+    setSelectedZoneForDetails(selectedZoneForDetails === name ? null : name);
   }
 
   function handleConnectionHover(id: string) {
@@ -1000,7 +1028,7 @@ export default function DroneMapVisualizer() {
                         : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                     }`}
                   >
-                    Shortest Path
+                    Shortest Paths
                   </button>
                 </div>
 
@@ -1306,6 +1334,7 @@ export default function DroneMapVisualizer() {
                         hoveredNode={hoveredNode}
                         hoveredConnection={hoveredConnection}
                         selectedZone={selectedZone}
+                        selectedZoneForDetails={selectedZoneForDetails}
                         connectedNodeNames={connectedNodeNames}
                         pathNodeNames={pathNodeNames}
                         pathConnectionKeys={pathConnectionKeys}
@@ -1343,6 +1372,94 @@ export default function DroneMapVisualizer() {
                           {blockedNodeMessage}
                         </motion.div>
                       )}
+
+                      {selectedZoneForDetails &&
+                        nodeByName.get(selectedZoneForDetails) && (
+                          <div
+                            onClick={() => setSelectedZoneForDetails(null)}
+                            className="absolute inset-0"
+                          >
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95 }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute inset-x-6 top-1/2 -translate-y-1/2 max-w-sm rounded-2xl border border-cyan-400/30 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-xl"
+                            >
+                              <div className="mb-4">
+                                <h3 className="text-lg font-bold text-white">
+                                  {selectedZoneForDetails}
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-1">
+                                  Zone Details
+                                </p>
+                              </div>
+                              <dl className="space-y-3 text-sm">
+                                {(() => {
+                                  const node = nodeByName.get(
+                                    selectedZoneForDetails,
+                                  );
+                                  if (!node) return null;
+                                  return (
+                                    <>
+                                      <div>
+                                        <dt className="text-slate-400">Type</dt>
+                                        <dd className="text-cyan-100 font-medium capitalize">
+                                          {node.role}
+                                        </dd>
+                                      </div>
+                                      <div>
+                                        <dt className="text-slate-400">Zone</dt>
+                                        <dd className="text-cyan-100 font-medium capitalize">
+                                          {node.zone}
+                                        </dd>
+                                      </div>
+                                      <div>
+                                        <dt className="text-slate-400">
+                                          Coordinates
+                                        </dt>
+                                        <dd className="text-cyan-100 font-medium">
+                                          ({node.x}, {node.y})
+                                        </dd>
+                                      </div>
+                                      {node.maxDrones && (
+                                        <div>
+                                          <dt className="text-slate-400">
+                                            Max Drones
+                                          </dt>
+                                          <dd className="text-cyan-100 font-medium">
+                                            {node.maxDrones}
+                                          </dd>
+                                        </div>
+                                      )}
+                                      {node.color && (
+                                        <div>
+                                          <dt className="text-slate-400">
+                                            Color
+                                          </dt>
+                                          <dd className="flex items-center gap-2">
+                                            <div
+                                              className="w-4 h-4 rounded"
+                                              style={{
+                                                backgroundColor: node.color,
+                                              }}
+                                            />
+                                            <span className="text-cyan-100 font-medium">
+                                              {node.color}
+                                            </span>
+                                          </dd>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </dl>
+                              <p className="mt-4 text-xs text-slate-500 text-center">
+                                Click outside to close
+                              </p>
+                            </motion.div>
+                          </div>
+                        )}
                     </>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950/70 px-6 text-center">

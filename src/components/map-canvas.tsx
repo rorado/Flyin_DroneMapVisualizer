@@ -20,6 +20,7 @@ export type MapCanvasProps = {
   hoveredNode: string | null;
   hoveredConnection: string | null;
   selectedZone: string | null;
+  selectedZoneForDetails: string | null;
   connectedNodeNames: Set<string> | null;
   pathNodeNames: Set<string> | null;
   pathConnectionKeys: Set<string> | null;
@@ -56,6 +57,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       hoveredNode,
       hoveredConnection,
       selectedZone,
+      selectedZoneForDetails,
       connectedNodeNames,
       pathNodeNames,
       pathConnectionKeys,
@@ -437,6 +439,25 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     stroke="#fbbf24"
                     strokeWidth="0.15"
                     opacity="0.95"
+                  />
+                )}
+
+                {selectedZoneForDetails === node.name && (
+                  <motion.circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={radius + 0.8}
+                    fill="none"
+                    stroke="#60a5fa"
+                    strokeWidth="0.1"
+                    opacity="0.7"
+                    animate={{
+                      r: [radius + 0.8, radius + 1.1, radius + 0.8],
+                    }}
+                    transition={{
+                      duration: 1.5,
+                      repeat: Infinity,
+                    }}
                   />
                 )}
 
