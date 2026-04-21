@@ -37,3 +37,29 @@ export interface ParsedMap {
   connections: ParsedConnection[];
   issues: ParseIssue[];
 }
+
+// Drone Simulation Types
+export interface DroneMovement {
+  droneId: string;
+  path: string[]; // Sequence of zone names
+}
+
+export interface DroneState {
+  droneId: string;
+  currentZone: string;
+  nextZone: string | null;
+  progress: number; // 0 to 1 (interpolation between current and next)
+  completed: boolean;
+  pathIndex: number;
+}
+
+export interface SimulationFrame {
+  frameNumber: number;
+  drones: DroneState[];
+  allCompleted: boolean;
+}
+
+export interface ParsedSimulation {
+  movements: DroneMovement[];
+  issues: ParseIssue[];
+}

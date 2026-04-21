@@ -44,6 +44,15 @@ export type MapCanvasProps = {
   onDrawingStart: (event: React.PointerEvent<SVGSVGElement>) => void;
   onDrawingMove: (event: React.PointerEvent<SVGSVGElement>) => void;
   onDrawingEnd: (event: React.PointerEvent<SVGSVGElement>) => void;
+  dronePositions?: Array<{
+    droneId: string;
+    x: number;
+    y: number;
+    nextX: number;
+    nextY: number;
+    progress: number;
+    completed: boolean;
+  }>;
 };
 
 export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
@@ -76,6 +85,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       onDrawingStart,
       onDrawingMove,
       onDrawingEnd,
+      dronePositions,
     },
     ref,
   ) {
@@ -617,6 +627,162 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
             ) : null}
           </g>
         ) : null}
+
+        {/* Render Drones */}
+        {dronePositions && dronePositions.length > 0 && (
+          <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {dronePositions.map((drone) => {
+              const droneIndex = parseInt(drone.droneId.substring(1));
+              const colors = [
+                "#3b82f6", // blue
+                "#10b981", // emerald
+                "#f59e0b", // amber
+                "#ef4444", // red
+                "#8b5cf6", // violet
+                "#ec4899", // pink
+              ];
+              const color = colors[droneIndex % colors.length];
+
+              // Interpolate drone position
+              const droneX = drone.x + (drone.nextX - drone.x) * drone.progress;
+              const droneY = drone.y + (drone.nextY - drone.y) * drone.progress;
+
+              return (
+                <g key={`drone-${drone.droneId}`}>
+                  {/* Drone trail glow */}
+                  <circle
+                    cx={droneX}
+                    cy={droneY}
+                    r={0.5}
+                    fill={color}
+                    opacity="0.1"
+                  />
+
+                  {/* Drone body - larger main circle */}
+                  <motion.circle
+                    cx={droneX}
+                    cy={droneY}
+                    r={0.3}
+                    fill={color}
+                    stroke="#ffffff"
+                    strokeWidth="0.06"
+                    filter={
+                      drone.completed
+                        ? "drop-shadow(0 0 0.4px rgba(16, 185, 129, 1)) drop-shadow(0 0 0.8px rgba(16, 185, 129, 0.6))"
+                        : "drop-shadow(0 0 0.3px rgba(0, 0, 0, 0.7))"
+                    }
+                    animate={
+                      drone.completed
+                        ? {
+                            scale: [1, 1.15, 1],
+                            opacity: [0.9, 1, 0.9],
+                          }
+                        : {}
+                    }
+                    transition={
+                      drone.completed
+                        ? {
+                            duration: 1,
+                            repeat: Infinity,
+                          }
+                        : {}
+                    }
+                  />
+
+                  {/* Propellers - 4 small circles around center */}
+                  <motion.g
+                    animate={{
+                      rotate: 360,
+                    }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                    style={{ transformOrigin: `${droneX} ${droneY}` }}
+                  >
+                    <circle
+                      cx={droneX + 0.24}
+                      cy={droneY}
+                      r={0.08}
+                      fill={color}
+                      opacity="0.6"
+                    />
+                    <circle
+                      cx={droneX - 0.24}
+                      cy={droneY}
+                      r={0.08}
+                      fill={color}
+                      opacity="0.6"
+                    />
+                    <circle
+                      cx={droneX}
+                      cy={droneY + 0.24}
+                      r={0.08}
+                      fill={color}
+                      opacity="0.6"
+                    />
+                    <circle
+                      cx={droneX}
+                      cy={droneY - 0.24}
+                      r={0.08}
+                      fill={color}
+                      opacity="0.6"
+                    />
+                  </motion.g>
+
+                  {/* Center dot for depth */}
+                  <circle
+                    cx={droneX}
+                    cy={droneY}
+                    r={0.12}
+                    fill="#ffffff"
+                    opacity="0.8"
+                  />
+
+                  {/* Drone label */}
+                  <text
+                    x={droneX}
+                    y={droneY + 0.06}
+                    fill="#000000"
+                    fontSize="0.12"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {drone.droneId}
+                  </text>
+
+                  {/* Completion indicator - rotating ring */}
+                  {drone.completed && (
+                    <motion.g
+                      animate={{
+                        rotate: 360,
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "linear",
+                      }}
+                      style={{ transformOrigin: `${droneX} ${droneY}` }}
+                    >
+                      <circle
+                        cx={droneX}
+                        cy={droneY}
+                        r={0.55}
+                        fill="none"
+                        stroke="#10b981"
+                        strokeWidth="0.04"
+                        strokeDasharray="0.3 0.3"
+                        opacity="0.8"
+                      />
+                    </motion.g>
+                  )}
+                </g>
+              );
+            })}
+          </motion.g>
+        )}
       </motion.svg>
     );
   },
