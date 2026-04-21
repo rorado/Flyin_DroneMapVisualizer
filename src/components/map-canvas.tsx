@@ -633,6 +633,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
           <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {dronePositions.map((drone) => {
               const droneIndex = parseInt(drone.droneId.substring(1));
+              const droneScale = 3;
               const colors = [
                 "#3b82f6", // blue
                 "#10b981", // emerald
@@ -653,7 +654,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   <circle
                     cx={droneX}
                     cy={droneY}
-                    r={0.5}
+                    r={0.5 * droneScale}
                     fill={color}
                     opacity="0.1"
                   />
@@ -662,10 +663,10 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   <motion.circle
                     cx={droneX}
                     cy={droneY}
-                    r={0.3}
+                    r={0.3 * droneScale}
                     fill={color}
                     stroke="#ffffff"
-                    strokeWidth="0.06"
+                    strokeWidth={0.06 * droneScale}
                     filter={
                       drone.completed
                         ? "drop-shadow(0 0 0.4px rgba(16, 185, 129, 1)) drop-shadow(0 0 0.8px rgba(16, 185, 129, 0.6))"
@@ -702,30 +703,30 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     style={{ transformOrigin: `${droneX} ${droneY}` }}
                   >
                     <circle
-                      cx={droneX + 0.24}
+                      cx={droneX + 0.24 * droneScale}
                       cy={droneY}
-                      r={0.08}
+                      r={0.08 * droneScale}
                       fill={color}
                       opacity="0.6"
                     />
                     <circle
-                      cx={droneX - 0.24}
+                      cx={droneX - 0.24 * droneScale}
                       cy={droneY}
-                      r={0.08}
+                      r={0.08 * droneScale}
                       fill={color}
                       opacity="0.6"
                     />
                     <circle
                       cx={droneX}
-                      cy={droneY + 0.24}
-                      r={0.08}
+                      cy={droneY + 0.24 * droneScale}
+                      r={0.08 * droneScale}
                       fill={color}
                       opacity="0.6"
                     />
                     <circle
                       cx={droneX}
-                      cy={droneY - 0.24}
-                      r={0.08}
+                      cy={droneY - 0.24 * droneScale}
+                      r={0.08 * droneScale}
                       fill={color}
                       opacity="0.6"
                     />
@@ -735,7 +736,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   <circle
                     cx={droneX}
                     cy={droneY}
-                    r={0.12}
+                    r={0.12 * droneScale}
                     fill="#ffffff"
                     opacity="0.8"
                   />
@@ -743,9 +744,9 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   {/* Drone label */}
                   <text
                     x={droneX}
-                    y={droneY + 0.06}
+                    y={droneY + 0.06 * droneScale}
                     fill="#000000"
-                    fontSize="0.12"
+                    fontSize={0.12 * droneScale}
                     fontWeight="bold"
                     textAnchor="middle"
                     style={{ pointerEvents: "none" }}
@@ -769,11 +770,11 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                       <circle
                         cx={droneX}
                         cy={droneY}
-                        r={0.55}
+                        r={0.55 * droneScale}
                         fill="none"
                         stroke="#10b981"
-                        strokeWidth="0.04"
-                        strokeDasharray="0.3 0.3"
+                        strokeWidth={0.04 * droneScale}
+                        strokeDasharray={`${0.3 * droneScale} ${0.3 * droneScale}`}
                         opacity="0.8"
                       />
                     </motion.g>

@@ -4,17 +4,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { computeViewBox } from "@/lib/geometry";
 import { parseDroneMap } from "@/lib/parser";
-import { parseSimulation, getMaxPathLength } from "@/lib/simulation-parser";
+import { getMaxPathLength, parseSimulation } from "@/lib/simulation-parser";
 import { SAMPLE_MAPS, SAMPLE_OPTIONS, SampleKey } from "@/lib/samples";
-import {
-  ParsedMap,
-  ParsedNode,
-  DroneState,
-  SimulationFrame,
-} from "@/lib/types";
+import { ParsedMap, ParsedNode } from "@/lib/types";
 import { MapCanvas } from "./map-canvas";
-import { SimulationInput } from "./simulation-input";
-import { SimulationControls } from "./simulation-controls";
+import { SimulationControls } from "@/components/simulation-controls";
+import { SimulationInput } from "@/components/simulation-input";
 import {
   clampPan,
   findPathBetweenNodes,
@@ -110,26 +105,16 @@ export default function DroneMapVisualizer() {
       isEraser: boolean;
     }>
   >([]);
-
-  // Simulation state
   const [simulationInput, setSimulationInput] = useState<string>("");
   const [appliedSimulation, setAppliedSimulation] = useState<string>("");
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
-  const [dronePositions, setDronePositions] = useState<
-    Array<{
-      droneId: string;
-      x: number;
-      y: number;
-      nextX: number;
-      nextY: number;
-      progress: number;
-      completed: boolean;
-    }>
-  >([]);
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
+  const completionClearTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pathDisplayMode, setPathDisplayMode] = useState<"all" | "shortest">(
@@ -141,6 +126,7 @@ export default function DroneMapVisualizer() {
     string | null
   >(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const mapSectionRef = useRef<HTMLElement | null>(null);
   const panPointerRef = useRef<{
     active: boolean;
     lastX: number;
@@ -152,8 +138,6 @@ export default function DroneMapVisualizer() {
   });
 
   const parsed = useMemo(() => parseDroneMap(appliedText), [appliedText]);
-
-  // Collect all valid zone names from the map
   const validZones = useMemo(() => {
     const zones = new Set<string>();
     if (parsed.startHub) zones.add(parsed.startHub.name);
@@ -161,19 +145,20 @@ export default function DroneMapVisualizer() {
     parsed.hubs.forEach((hub) => zones.add(hub.name));
     return zones;
   }, [parsed.startHub, parsed.endHub, parsed.hubs]);
-
-  const parsedSimulation = useMemo(
+  const liveParsedSimulation = useMemo(
+    () => parseSimulation(simulationInput, validZones),
+    [simulationInput, validZones],
+  );
+  const appliedParsedSimulation = useMemo(
     () => parseSimulation(appliedSimulation, validZones),
     [appliedSimulation, validZones],
   );
   const maxSimulationFrames = useMemo(() => {
-    // Calculate max frames accounting for sequential drone movement delays
-    const DELAY_FRAMES = 1; // Must match DELAY_FRAMES in computedDronePositions
-    const basePath = getMaxPathLength(parsedSimulation.movements);
-    const numDrones = parsedSimulation.movements.length;
-    // Total frames = base path length + delay offset for each drone
-    return basePath + (numDrones - 1) * DELAY_FRAMES;
-  }, [parsedSimulation.movements]);
+    const delayFrames = 1;
+    const baseFrames = getMaxPathLength(appliedParsedSimulation.movements);
+    const dronesCount = appliedParsedSimulation.movements.length;
+    return baseFrames + Math.max(0, dronesCount - 1) * delayFrames;
+  }, [appliedParsedSimulation.movements]);
   const sourceNodes = useMemo(() => {
     const seen = new Set<string>();
     return [parsed.startHub, ...parsed.hubs, parsed.endHub].filter(
@@ -223,54 +208,37 @@ export default function DroneMapVisualizer() {
     return map;
   }, [nodes]);
 
-  // Calculate drone positions for current frame
   const computedDronePositions = useMemo(() => {
-    if (!appliedSimulation || parsedSimulation.movements.length === 0) {
-      return [];
-    }
-
-    if (!parsed.startHub) {
+    if (
+      !appliedSimulation ||
+      appliedParsedSimulation.movements.length === 0 ||
+      !parsed.startHub ||
+      !parsed.endHub
+    ) {
       return [];
     }
 
     const startHubName = parsed.startHub.name;
-    const DELAY_FRAMES = 1; // Delay between each drone's movement in frames
+    const endHubName = parsed.endHub.name;
+    const delayFrames = 1;
 
-    const positions = parsedSimulation.movements.map((movement, droneIdx) => {
-      // Extract drone number to calculate delay
+    return appliedParsedSimulation.movements.map((movement, droneIdx) => {
       const droneNumber =
-        parseInt(movement.droneId.substring(1)) || droneIdx + 1;
-
-      // Calculate the effective frame for this drone
-      // Each drone is offset by (droneNumber - 1) * DELAY_FRAMES
-      const droneFrameOffset = (droneNumber - 1) * DELAY_FRAMES;
+        parseInt(movement.droneId.slice(1), 10) || droneIdx + 1;
+      const droneFrameOffset = (droneNumber - 1) * delayFrames;
       const effectiveFrame = Math.max(0, currentFrame - droneFrameOffset);
 
-      // Frame 0: all drones start at start_hub
-      // Frame 1+: drones move to their path destinations
-      let currentZoneName: string;
-      let nextZoneName: string;
-
-      if (effectiveFrame === 0) {
-        // Drone starts at the start hub
-        currentZoneName = startHubName;
-        nextZoneName =
-          movement.path.length > 0 ? movement.path[0] : startHubName;
-      } else {
-        // PathIndex represents which zone in the movement path we're at
+      let currentZoneName = startHubName;
+      if (effectiveFrame > 0 && movement.path.length > 0) {
         const pathIndex = Math.min(
           effectiveFrame - 1,
           movement.path.length - 1,
         );
-        currentZoneName = movement.path[pathIndex];
-        nextZoneName =
-          movement.path[Math.min(pathIndex + 1, movement.path.length - 1)];
+        currentZoneName = movement.path[pathIndex] ?? startHubName;
       }
 
       const currentZone = nodeByName.get(currentZoneName);
-      const nextZone = nodeByName.get(nextZoneName);
-
-      if (!currentZone || !nextZone) {
+      if (!currentZone) {
         return {
           droneId: movement.droneId,
           x: 0,
@@ -278,12 +246,10 @@ export default function DroneMapVisualizer() {
           nextX: 0,
           nextY: 0,
           progress: 0,
-          completed: effectiveFrame >= movement.path.length,
+          completed: false,
         };
       }
 
-      // Drone stays at current zone (progress = 0)
-      // No interpolation between zones
       return {
         droneId: movement.droneId,
         x: currentZone.x,
@@ -291,17 +257,16 @@ export default function DroneMapVisualizer() {
         nextX: currentZone.x,
         nextY: currentZone.y,
         progress: 0,
-        completed: effectiveFrame >= movement.path.length,
+        completed: currentZoneName === endHubName,
       };
     });
-
-    return positions;
   }, [
-    currentFrame,
-    parsedSimulation.movements,
-    nodeByName,
     appliedSimulation,
+    appliedParsedSimulation.movements,
     parsed.startHub,
+    parsed.endHub,
+    currentFrame,
+    nodeByName,
   ]);
 
   const connectedNodeNames = useMemo(() => {
@@ -486,6 +451,12 @@ export default function DroneMapVisualizer() {
     setHoveredConnection(null);
     setSelectedPathIndex(null);
     setSelectedZone(null);
+
+    // Reset simulation whenever the rendered map changes.
+    setSimulationInput("");
+    setAppliedSimulation("");
+    setIsSimulationRunning(false);
+    setCurrentFrame(0);
   }, [appliedText]);
 
   useEffect(() => {
@@ -505,7 +476,6 @@ export default function DroneMapVisualizer() {
     }
   }, [clampedPan, pan.x, pan.y]);
 
-  // Simulation animation loop
   useEffect(() => {
     if (!isSimulationRunning || maxSimulationFrames === 0) {
       if (animationFrameRef.current) {
@@ -529,7 +499,7 @@ export default function DroneMapVisualizer() {
           const next = prev + 1;
           if (next >= maxSimulationFrames) {
             setIsSimulationRunning(false);
-            return maxSimulationFrames - 1;
+            return Math.max(0, maxSimulationFrames - 1);
           }
           return next;
         });
@@ -931,7 +901,6 @@ export default function DroneMapVisualizer() {
     }
   }
 
-  // Simulation handlers
   function handleApplySimulation() {
     setAppliedSimulation(simulationInput);
     setCurrentFrame(0);
@@ -940,7 +909,24 @@ export default function DroneMapVisualizer() {
 
   function handlePlayPauseSimulation() {
     if (maxSimulationFrames > 0) {
-      setIsSimulationRunning(!isSimulationRunning);
+      setIsSimulationRunning((prev) => {
+        const next = !prev;
+
+        if (next) {
+          if (appliedText && !shouldDisplayMap) {
+            setShouldDisplayMap(true);
+          }
+
+          requestAnimationFrame(() => {
+            mapSectionRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          });
+        }
+
+        return next;
+      });
     }
   }
 
@@ -949,20 +935,113 @@ export default function DroneMapVisualizer() {
     setIsSimulationRunning(false);
   }
 
+  function handleClearSimulation() {
+    setSimulationInput("");
+    setAppliedSimulation("");
+    setCurrentFrame(0);
+    setIsSimulationRunning(false);
+  }
+
+  function handleGenerateSimulationCode() {
+    if (!parsed.startHub || !parsed.endHub || !parsed.nbDrones) {
+      setSimulationInput(
+        "# Unable to generate simulation. Ensure map has nb_drones, start_hub, and end_hub.",
+      );
+      return;
+    }
+
+    const path = findPathBetweenNodes(
+      parsed.startHub.name,
+      parsed.endHub.name,
+      parsed.connections,
+    );
+
+    // Exclude the start hub and keep intermediate + goal zones.
+    const movementZones = path.slice(1);
+    if (movementZones.length === 0) {
+      setSimulationInput(
+        "# Unable to generate simulation. No valid path from start_hub to end_hub.",
+      );
+      return;
+    }
+
+    const droneCount = parsed.nbDrones;
+    const totalFrames = movementZones.length + droneCount - 1;
+    const lines: string[] = [];
+
+    // Build pipelined movements, one frame per line (D1 starts first, then D2, ...).
+    for (let frame = 1; frame <= totalFrames; frame++) {
+      const tokens: string[] = [];
+
+      for (let drone = 1; drone <= droneCount; drone++) {
+        const step = frame - (drone - 1);
+        if (step >= 1 && step <= movementZones.length) {
+          tokens.push(`D${drone}-${movementZones[step - 1]}`);
+        }
+      }
+
+      if (tokens.length > 0) {
+        lines.push(tokens.join(" "));
+      }
+    }
+
+    setSimulationInput(lines.join("\n"));
+    setIsSimulationRunning(false);
+    setCurrentFrame(0);
+  }
+
   function handleFrameChange(frame: number) {
     setIsSimulationRunning(false);
-    setCurrentFrame(Math.max(0, Math.min(frame, maxSimulationFrames - 1)));
+    setCurrentFrame(
+      Math.max(0, Math.min(frame, Math.max(0, maxSimulationFrames - 1))),
+    );
   }
 
   function handleSpeedChange(speed: number) {
     setSimulationSpeed(Math.max(0.01, Math.min(5, speed)));
   }
 
+  const hasRenderableMap = nodes.length > 0;
   const completedDronesCount = computedDronePositions.filter(
-    (d) => d.completed,
+    (drone) => drone.completed,
   ).length;
 
-  const hasRenderableMap = nodes.length > 0;
+  useEffect(() => {
+    const totalDrones = appliedParsedSimulation.movements.length;
+
+    if (totalDrones === 0) {
+      if (completionClearTimeoutRef.current) {
+        clearTimeout(completionClearTimeoutRef.current);
+        completionClearTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const allDronesAtEnd =
+      completedDronesCount > 0 && completedDronesCount === totalDrones;
+
+    if (allDronesAtEnd && !completionClearTimeoutRef.current) {
+      completionClearTimeoutRef.current = setTimeout(() => {
+        setAppliedSimulation("");
+        setIsSimulationRunning(false);
+        setCurrentFrame(0);
+        completionClearTimeoutRef.current = null;
+      }, 3000);
+    }
+
+    if (!allDronesAtEnd && completionClearTimeoutRef.current) {
+      clearTimeout(completionClearTimeoutRef.current);
+      completionClearTimeoutRef.current = null;
+    }
+  }, [completedDronesCount, appliedParsedSimulation.movements.length]);
+
+  useEffect(() => {
+    return () => {
+      if (completionClearTimeoutRef.current) {
+        clearTimeout(completionClearTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div
@@ -1041,25 +1120,45 @@ export default function DroneMapVisualizer() {
           </div>
         </motion.header>
 
-        {/* Simulation UI Section */}
         <motion.section
-          initial={{ opacity: 0, y: -18 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className={`flex flex-row gap-2 rounded-3xl border border-white/10 bg-slate-950/70 p-3 shadow-glow backdrop-blur-xl ${
+          className={`rounded-3xl border border-white/10 bg-slate-950/70 p-3 shadow-glow backdrop-blur-xl ${
             isFullscreen ? "hidden" : ""
           }`}
         >
-          <div className="flex-1">
-            <SimulationInput
-              value={simulationInput}
-              onChange={setSimulationInput}
-              onApply={handleApplySimulation}
-              issues={parsedSimulation.issues}
-            />
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">
+              Simulation Tools
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleGenerateSimulationCode}
+                className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
+              >
+                Get example for simulation code
+              </button>
+              <button
+                type="button"
+                onClick={handleClearSimulation}
+                className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/20"
+              >
+                Clear Simulation
+              </button>
+            </div>
           </div>
 
-          {appliedSimulation && maxSimulationFrames > 0 ? (
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <div className="flex-1">
+              <SimulationInput
+                value={simulationInput}
+                onChange={setSimulationInput}
+                onApply={handleApplySimulation}
+                issues={liveParsedSimulation.issues}
+              />
+            </div>
+
             <div className="flex-1">
               <SimulationControls
                 isRunning={isSimulationRunning}
@@ -1070,361 +1169,346 @@ export default function DroneMapVisualizer() {
                 currentFrame={currentFrame}
                 maxFrames={maxSimulationFrames}
                 onFrameChange={handleFrameChange}
-                totalDrones={parsedSimulation.movements.length}
+                totalDrones={appliedParsedSimulation.movements.length}
                 completedDrones={completedDronesCount}
                 hasMap={!!appliedText && nodes.length > 0}
-                hasSimulationIssues={parsedSimulation.issues.length > 0}
+                hasSimulationIssues={appliedParsedSimulation.issues.some(
+                  (issue) => issue.severity === "error",
+                )}
                 errorMessage={
                   !appliedText || nodes.length === 0
                     ? "Setup map first"
-                    : parsedSimulation.issues.length > 0
-                      ? `Fix ${parsedSimulation.issues.length} simulation error(s)`
+                    : appliedParsedSimulation.issues.some(
+                          (issue) => issue.severity === "error",
+                        )
+                      ? `Fix ${appliedParsedSimulation.issues.filter((issue) => issue.severity === "error").length} simulation error(s)`
                       : ""
                 }
               />
             </div>
-          ) : (
-            <div className="flex-1 bg-slate-800 rounded-xl p-3 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-xs text-slate-400 mb-2">
-                  {!appliedSimulation
-                    ? "👈 Enter drone movements and click Apply"
-                    : "⚠️ No valid simulation or map"}
-                </p>
-              </div>
-            </div>
-          )}
+          </div>
         </motion.section>
 
         <div
-          className={`flex flex-1 flex-row gap-6 ${isFullscreen ? "flex-col" : ""}`}
+          className={`grid flex-1 gap-6 ${
+            isFullscreen ? "grid-cols-1" : "xl:grid-cols-[420px_minmax(0,1fr)]"
+          }`}
         >
-          {/* Sidebar Sections */}
-          <div
-            className={`flex flex-col gap-6 ${
-              isFullscreen ? "w-full" : "w-80 flex-shrink-0"
+          <motion.section
+            initial={{ opacity: 0, x: -18 }}
+            animate={{ opacity: 1, x: 0 }}
+            className={`flex h-full flex-col gap-6 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-glow backdrop-blur-xl ${
+              isFullscreen ? "hidden" : ""
             }`}
           >
-            <motion.section
-              initial={{ opacity: 0, x: -18 }}
-              animate={{ opacity: 1, x: 0 }}
-              className={`flex h-full flex-col gap-6 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-glow backdrop-blur-xl ${
-                isFullscreen ? "hidden" : ""
-              }`}
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-white">
-                      Map input
-                    </h2>
-                    <p className="text-sm text-slate-400">
-                      Choose a sample or paste your own configuration.
-                    </p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Map input
+                  </h2>
+                  <p className="text-sm text-slate-400">
+                    Choose a sample or paste your own configuration.
+                  </p>
+                </div>
+                <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                  Category
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {SAMPLE_CATEGORIES.map((category) => (
+                      <button
+                        key={category}
+                        onClick={() => {
+                          setSelectedCategory(category);
+                          const mapsInCategory = getSamplesByCategory(category);
+                          if (mapsInCategory.length > 0) {
+                            const firstMapKey = mapsInCategory[0].value;
+                            setSampleKey(firstMapKey);
+                            setDraftText(SAMPLE_MAPS[firstMapKey]);
+                          }
+                        }}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                          selectedCategory === category
+                            ? "border border-cyan-400 bg-cyan-400/20 text-cyan-100"
+                            : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                        }`}
+                      >
+                        {category}
+                      </button>
+                    ))}
                   </div>
-                  <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                    Category
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {SAMPLE_CATEGORIES.map((category) => (
-                        <button
-                          key={category}
-                          onClick={() => {
-                            setSelectedCategory(category);
-                            const mapsInCategory =
-                              getSamplesByCategory(category);
-                            if (mapsInCategory.length > 0) {
-                              const firstMapKey = mapsInCategory[0].value;
-                              setSampleKey(firstMapKey);
-                              setDraftText(SAMPLE_MAPS[firstMapKey]);
-                            }
-                          }}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                            selectedCategory === category
-                              ? "border border-cyan-400 bg-cyan-400/20 text-cyan-100"
-                              : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                          }`}
-                        >
-                          {category}
-                        </button>
-                      ))}
-                    </div>
-                  </label>
-                  <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                    Map
-                    <select
-                      value={sampleKey}
-                      onChange={(event) => {
-                        const key = event.target.value as SampleKey;
-                        setSampleKey(key);
-                        setDraftText(SAMPLE_MAPS[key]);
-                      }}
-                      className="mt-2 block w-full rounded-2xl border border-white/10 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/70"
-                    >
-                      {getSamplesByCategory(selectedCategory).map((sample) => (
-                        <option key={sample.value} value={sample.value}>
-                          {sample.label} - {sample.description}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAppliedText(draftText);
-                      setShouldDisplayMap(false);
-                      setShouldCalculatePaths(false);
-                      setSelectedPathIndex(null);
+                </label>
+                <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                  Map
+                  <select
+                    value={sampleKey}
+                    onChange={(event) => {
+                      const key = event.target.value as SampleKey;
+                      setSampleKey(key);
+                      setDraftText(SAMPLE_MAPS[key]);
                     }}
-                    className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
+                    className="mt-2 block w-full rounded-2xl border border-white/10 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-cyan-400/70"
                   >
-                    Render map
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDraftText("");
-                      setAppliedText("");
-                      setHoveredNode(null);
-                      setHoveredConnection(null);
-                    }}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
-                  >
-                    Clear
-                  </button>
-                </div>
-
-                <textarea
-                  value={draftText}
-                  onChange={(event) => setDraftText(event.target.value)}
-                  placeholder="Paste drone map text here..."
-                  className="min-h-[260px] w-full resize-none rounded-3xl border border-white/10 bg-slate-900/90 p-4 text-sm leading-6 text-slate-100 outline-none ring-0 transition placeholder:text-slate-500 focus:border-cyan-400/70"
-                />
+                    {getSamplesByCategory(selectedCategory).map((sample) => (
+                      <option key={sample.value} value={sample.value}>
+                        {sample.label} - {sample.description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppliedText(draftText);
+                    setShouldDisplayMap(false);
+                    setShouldCalculatePaths(false);
+                    setSelectedPathIndex(null);
+                  }}
+                  className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
+                >
+                  Render map
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftText("");
+                    setAppliedText("");
+                    setHoveredNode(null);
+                    setHoveredConnection(null);
+                  }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <textarea
+                value={draftText}
+                onChange={(event) => setDraftText(event.target.value)}
+                placeholder="Paste drone map text here..."
+                className="min-h-[260px] w-full resize-none rounded-3xl border border-white/10 bg-slate-900/90 p-4 text-sm leading-6 text-slate-100 outline-none ring-0 transition placeholder:text-slate-500 focus:border-cyan-400/70"
+              />
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-semibold text-white">Validation</h3>
+                <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                  {summary.issueCount === 0
+                    ? "All good"
+                    : `${summary.issueCount} error${summary.issueCount === 1 ? "" : "s"}`}
+                </span>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                <AnimatePresence initial={false}>
+                  {parsed.issues.length === 0 ? (
+                    <motion.div
+                      key="clean-state"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100"
+                    >
+                      Ready to visualize.
+                    </motion.div>
+                  ) : (
+                    parsed.issues.map((issue) => (
+                      <motion.div
+                        key={`${issue.lineNumber}-${issue.message}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        className={`rounded-2xl border px-4 py-3 text-sm ${
+                          issue.severity === "error"
+                            ? "border-rose-400/20 bg-rose-400/10 text-rose-100"
+                            : "border-amber-400/20 bg-amber-400/10 text-amber-100"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.2em]">
+                            {formatIssueLocation(issue.lineNumber)}
+                          </span>
+                          <span className="leading-6">{issue.message}</span>
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {shouldCalculatePaths ? (
               <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-semibold text-white">Validation</h3>
-                  <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
-                    {summary.issueCount === 0
-                      ? "All good"
-                      : `${summary.issueCount} error${summary.issueCount === 1 ? "" : "s"}`}
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="font-semibold text-white">
+                      {pathDisplayMode === "all"
+                        ? "All Possible Paths"
+                        : "Shortest Path"}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Click to highlight, click again to hide
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300">
+                    {displayedPaths.length}{" "}
+                    {pathDisplayMode === "all" ? "paths" : "path"}
                   </span>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  <AnimatePresence initial={false}>
-                    {parsed.issues.length === 0 ? (
-                      <motion.div
-                        key="clean-state"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100"
-                      >
-                        Ready to visualize.
-                      </motion.div>
-                    ) : (
-                      parsed.issues.map((issue) => (
-                        <motion.div
-                          key={`${issue.lineNumber}-${issue.message}`}
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          className={`rounded-2xl border px-4 py-3 text-sm ${
-                            issue.severity === "error"
-                              ? "border-rose-400/20 bg-rose-400/10 text-rose-100"
-                              : "border-amber-400/20 bg-amber-400/10 text-amber-100"
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.2em]">
-                              {formatIssueLocation(issue.lineNumber)}
-                            </span>
-                            <span className="leading-6">{issue.message}</span>
-                          </div>
-                        </motion.div>
-                      ))
-                    )}
-                  </AnimatePresence>
+                <div className="flex gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("all");
+                    }}
+                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      pathDisplayMode === "all"
+                        ? "border border-cyan-400 bg-cyan-400/20 text-cyan-100"
+                        : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    }`}
+                  >
+                    All Paths
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("shortest");
+                    }}
+                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                      pathDisplayMode === "shortest"
+                        ? "border border-amber-400 bg-amber-400/20 text-amber-100"
+                        : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    }`}
+                  >
+                    Shortest Paths
+                  </button>
                 </div>
-              </div>
 
-              {shouldCalculatePaths ? (
-                <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4">
-                  <div className="flex items-center justify-between gap-3 mb-4">
-                    <div>
-                      <h3 className="font-semibold text-white">
-                        {pathDisplayMode === "all"
-                          ? "All Possible Paths"
-                          : "Shortest Path"}
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        Click to highlight, click again to hide
-                      </p>
+                <div className="max-h-[260px] space-y-2 overflow-y-auto">
+                  {displayedPaths.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-400/20 bg-slate-400/10 px-4 py-3 text-sm text-slate-300">
+                      No paths found
                     </div>
-                    <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300">
-                      {displayedPaths.length}{" "}
-                      {pathDisplayMode === "all" ? "paths" : "path"}
-                    </span>
-                  </div>
+                  ) : (
+                    displayedPaths.map((path, displayIdx) => {
+                      const originalIdx = allPathsFromHoveredToGoal.findIndex(
+                        (p) => p === path,
+                      );
 
-                  <div className="flex gap-2 mb-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShouldCalculatePaths(true);
-                        setPathDisplayMode("all");
-                      }}
-                      className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
-                        pathDisplayMode === "all"
-                          ? "border border-cyan-400 bg-cyan-400/20 text-cyan-100"
-                          : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                      }`}
-                    >
-                      All Paths
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShouldCalculatePaths(true);
-                        setPathDisplayMode("shortest");
-                      }}
-                      className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
-                        pathDisplayMode === "shortest"
-                          ? "border border-amber-400 bg-amber-400/20 text-amber-100"
-                          : "border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                      }`}
-                    >
-                      Shortest Paths
-                    </button>
-                  </div>
-
-                  <div className="max-h-[260px] space-y-2 overflow-y-auto">
-                    {displayedPaths.length === 0 ? (
-                      <div className="rounded-2xl border border-slate-400/20 bg-slate-400/10 px-4 py-3 text-sm text-slate-300">
-                        No paths found
-                      </div>
-                    ) : (
-                      displayedPaths.map((path, displayIdx) => {
-                        const originalIdx = allPathsFromHoveredToGoal.findIndex(
-                          (p) => p === path,
-                        );
-
-                        // Calculate total turns based on zone types
-                        // Start zone has 0 cost, count from zone 1 onwards
-                        let totalTurns = 0;
-                        for (let i = 1; i < path.length; i++) {
-                          const zoneName = path[i];
-                          const node = nodeByName.get(zoneName);
-                          if (node) {
-                            if (node.zone === "blocked") {
-                              totalTurns = -1; // Invalid path
-                              break;
-                            } else if (node.zone === "restricted") {
-                              totalTurns += 2;
-                            } else {
-                              // normal and priority cost 1 turn each
-                              totalTurns += 1;
-                            }
+                      // Calculate total turns based on zone types
+                      // Start zone has 0 cost, count from zone 1 onwards
+                      let totalTurns = 0;
+                      for (let i = 1; i < path.length; i++) {
+                        const zoneName = path[i];
+                        const node = nodeByName.get(zoneName);
+                        if (node) {
+                          if (node.zone === "blocked") {
+                            totalTurns = -1; // Invalid path
+                            break;
+                          } else if (node.zone === "restricted") {
+                            totalTurns += 2;
+                          } else {
+                            // normal and priority cost 1 turn each
+                            totalTurns += 1;
                           }
                         }
+                      }
 
-                        return (
-                          <button
-                            key={displayIdx}
-                            onClick={() => {
-                              setSelectedPathIndex(
-                                selectedPathIndex === originalIdx
-                                  ? null
-                                  : originalIdx,
-                              );
-                            }}
-                            className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono break-words transition ${
+                      return (
+                        <button
+                          key={displayIdx}
+                          onClick={() => {
+                            setSelectedPathIndex(
                               selectedPathIndex === originalIdx
-                                ? "border-emerald-400 bg-emerald-400/20 text-emerald-100 ring-1 ring-emerald-400"
-                                : "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 text-slate-100 hover:bg-emerald-400/15 hover:border-emerald-400/50"
-                            }`}
+                                ? null
+                                : originalIdx,
+                            );
+                          }}
+                          className={`w-full text-left rounded-lg border px-3 py-2 text-xs font-mono break-words transition ${
+                            selectedPathIndex === originalIdx
+                              ? "border-emerald-400 bg-emerald-400/20 text-emerald-100 ring-1 ring-emerald-400"
+                              : "border-emerald-400/30 bg-gradient-to-r from-emerald-400/10 to-cyan-400/5 text-slate-100 hover:bg-emerald-400/15 hover:border-emerald-400/50"
+                          }`}
+                        >
+                          <div
+                            className={`font-semibold mb-1 ${selectedPathIndex === originalIdx ? "text-emerald-300" : "text-emerald-300"}`}
                           >
-                            <div
-                              className={`font-semibold mb-1 ${selectedPathIndex === originalIdx ? "text-emerald-300" : "text-emerald-300"}`}
-                            >
-                              {pathDisplayMode === "shortest"
-                                ? "Shortest Path"
-                                : `Path ${originalIdx + 1}`}{" "}
-                              (
-                              {totalTurns === -1
-                                ? "invalid"
-                                : `${totalTurns} turns`}
-                              )
-                            </div>
-                            <div className="flex flex-wrap items-center gap-1 whitespace-normal">
-                              {path.map((zone, i) => (
-                                <div
-                                  key={i}
-                                  className="flex items-center gap-1"
+                            {pathDisplayMode === "shortest"
+                              ? "Shortest Path"
+                              : `Path ${originalIdx + 1}`}{" "}
+                            (
+                            {totalTurns === -1
+                              ? "invalid"
+                              : `${totalTurns} turns`}
+                            )
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1 whitespace-normal">
+                            {path.map((zone, i) => (
+                              <div key={i} className="flex items-center gap-1">
+                                <span
+                                  className={`rounded px-2 py-0.5 font-medium ${
+                                    selectedPathIndex === originalIdx
+                                      ? "bg-emerald-600 text-white"
+                                      : "bg-slate-800 text-cyan-200"
+                                  }`}
                                 >
-                                  <span
-                                    className={`rounded px-2 py-0.5 font-medium ${
-                                      selectedPathIndex === originalIdx
-                                        ? "bg-emerald-600 text-white"
-                                        : "bg-slate-800 text-cyan-200"
-                                    }`}
-                                  >
-                                    {zone}
+                                  {zone}
+                                </span>
+                                {i < path.length - 1 && (
+                                  <span className="text-emerald-400 font-bold">
+                                    →
                                   </span>
-                                  {i < path.length - 1 && (
-                                    <span className="text-emerald-400 font-bold">
-                                      →
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
-              ) : (
-                <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4 flex flex-col items-center justify-center">
-                  <p className="text-sm text-slate-300 text-center mb-4">
-                    Click below to calculate and display paths
-                  </p>
-                  <div className="flex gap-2 w-full">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShouldCalculatePaths(true);
-                        setPathDisplayMode("all");
-                      }}
-                      className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition border border-cyan-400 bg-cyan-400/20 text-cyan-100 hover:bg-cyan-400/30"
-                    >
-                      Show All Paths
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShouldCalculatePaths(true);
-                        setPathDisplayMode("shortest");
-                      }}
-                      className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition border border-amber-400 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30"
-                    >
-                      Show Shortest Path
-                    </button>
-                  </div>
+              </div>
+            ) : (
+              <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4 flex flex-col items-center justify-center">
+                <p className="text-sm text-slate-300 text-center mb-4">
+                  Click below to calculate and display paths
+                </p>
+                <div className="flex gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("all");
+                    }}
+                    className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition border border-cyan-400 bg-cyan-400/20 text-cyan-100 hover:bg-cyan-400/30"
+                  >
+                    Show All Paths
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShouldCalculatePaths(true);
+                      setPathDisplayMode("shortest");
+                    }}
+                    className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition border border-amber-400 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30"
+                  >
+                    Show Shortest Path
+                  </button>
                 </div>
-              )}
-            </motion.section>
-          </div>
+              </div>
+            )}
+          </motion.section>
 
-          {/* Map Section */}
           <motion.section
+            ref={mapSectionRef}
             initial={{ opacity: 0, x: 18 }}
             animate={{ opacity: 1, x: 0 }}
-            className={`flex flex-1 ${
+            className={`flex ${
               isFullscreen
                 ? "h-screen w-screen flex-col rounded-none border-0"
                 : "min-h-[820px] flex-col overflow-hidden rounded-3xl border border-white/10"

@@ -42,7 +42,9 @@ export function SimulationControls({
   errorMessage = "",
 }: SimulationControlsProps) {
   const speedOptions = [0.01, 0.25, 1, 1.5, 2];
-  const progress = maxFrames > 1 ? (currentFrame / (maxFrames - 1)) * 100 : 0;
+  const maxFrameIndex = Math.max(0, maxFrames - 1);
+  const progress =
+    maxFrameIndex > 0 ? (currentFrame / maxFrameIndex) * 100 : 100;
 
   const canPlay = hasMap && !hasSimulationIssues && totalDrones > 0;
 
@@ -91,7 +93,7 @@ export function SimulationControls({
         </motion.button>
 
         <div className="flex-1 text-right text-xs text-slate-400">
-          Frame {currentFrame} / {maxFrames - 1}
+          Frame {currentFrame} / {maxFrameIndex}
         </div>
       </div>
 
@@ -123,7 +125,7 @@ export function SimulationControls({
         <input
           type="range"
           min="0"
-          max={Math.max(0, maxFrames - 1)}
+          max={maxFrameIndex}
           value={currentFrame}
           onChange={(e) => onFrameChange(Number(e.target.value))}
           className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
@@ -158,7 +160,7 @@ export function SimulationControls({
       {/* Drone Status */}
       <div className="bg-slate-800 rounded-lg p-2 border border-slate-700">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-300">Completed:</span>
+          <span className="text-xs text-slate-300">End Zone:</span>
           <div className="flex items-center gap-1">
             <div className="text-lg font-bold text-green-400">
               {completedDrones}
