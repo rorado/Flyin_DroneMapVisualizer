@@ -24,6 +24,8 @@ export type MapCanvasProps = {
   connectedNodeNames: Set<string> | null;
   pathNodeNames: Set<string> | null;
   pathConnectionKeys: Set<string> | null;
+  simulationPathNodeNames?: Set<string> | null;
+  simulationPathConnectionKeys?: Set<string> | null;
   isPanning: boolean;
   onNodeHover: (name: string) => void;
   onNodeLeave: () => void;
@@ -70,6 +72,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       connectedNodeNames,
       pathNodeNames,
       pathConnectionKeys,
+      simulationPathNodeNames,
+      simulationPathConnectionKeys,
       isPanning,
       onNodeHover,
       onNodeLeave,
@@ -283,6 +287,9 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
             const isPathConnection = pathConnectionKeys
               ? pathConnectionKeys.has(connectionKey)
               : false;
+            const isSimulationPathConnection = simulationPathConnectionKeys
+              ? simulationPathConnectionKeys.has(connectionKey)
+              : false;
             const isHovered = hoveredConnection === connection.id;
             const hasActiveNodePath =
               hoveredNode !== null && pathConnectionKeys !== null;
@@ -321,10 +328,14 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                       ? "#f8fafc"
                       : isPathConnection
                         ? "#6ee7b7"
-                        : "rgba(148,163,184,0.8)"
+                        : isSimulationPathConnection
+                          ? "#6ee7b7"
+                          : "rgba(148,163,184,0.8)"
                   }
                   strokeWidth={
-                    isHovered || isPathConnection ? lineWidth * 1.8 : lineWidth
+                    isHovered || isPathConnection || isSimulationPathConnection
+                      ? lineWidth * 1.8
+                      : lineWidth
                   }
                   opacity={isRelated ? 1 : 0.4}
                   strokeLinecap="round"
@@ -383,6 +394,9 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
             const isPathNode = pathNodeNames
               ? pathNodeNames.has(node.name)
               : false;
+            const isSimulationPathNode = simulationPathNodeNames
+              ? simulationPathNodeNames.has(node.name)
+              : false;
             const hasActiveNodePath =
               hoveredNode !== null && pathNodeNames !== null;
             const isConnectedToHoveredConnection = connectedNodeNames
@@ -440,13 +454,25 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   />
                 )}
 
+                {!isPathNode && isSimulationPathNode && (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={radius + 0.28}
+                    fill="none"
+                    stroke="#6ee7b7"
+                    strokeWidth="0.07"
+                    opacity="0.75"
+                  />
+                )}
+
                 {selectedZone === node.name && (
                   <circle
                     cx={node.x}
                     cy={node.y}
                     r={radius + 0.6}
                     fill="none"
-                    stroke="#fbbf24"
+                    stroke="#6ee7b7"
                     strokeWidth="0.15"
                     opacity="0.95"
                   />

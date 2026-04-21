@@ -4,7 +4,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { computeViewBox } from "@/lib/geometry";
 import { parseDroneMap } from "@/lib/parser";
-import { getMaxPathLength, parseSimulation } from "@/lib/simulation-parser";
+import {
+  getMaxPathLength,
+  parseSimulation,
+  validateSimulationAgainstMap,
+} from "@/lib/simulation-parser";
 import { SAMPLE_MAPS, SAMPLE_OPTIONS, SampleKey } from "@/lib/samples";
 import { ParsedMap, ParsedNode } from "@/lib/types";
 import { MapCanvas } from "./map-canvas";
@@ -152,6 +156,20 @@ export default function DroneMapVisualizer() {
   const appliedParsedSimulation = useMemo(
     () => parseSimulation(appliedSimulation, validZones),
     [appliedSimulation, validZones],
+  );
+  const liveSimulationIssues = useMemo(
+    () => [
+      ...liveParsedSimulation.issues,
+      ...validateSimulationAgainstMap(simulationInput, parsed),
+    ],
+    [liveParsedSimulation.issues, simulationInput, parsed],
+  );
+  const appliedSimulationIssues = useMemo(
+    () => [
+      ...appliedParsedSimulation.issues,
+      ...validateSimulationAgainstMap(appliedSimulation, parsed),
+    ],
+    [appliedParsedSimulation.issues, appliedSimulation, parsed],
   );
   const maxSimulationFrames = useMemo(() => {
     const delayFrames = 1;
@@ -388,6 +406,61 @@ export default function DroneMapVisualizer() {
     // When no path is selected, return null (no green connections on hover)
     return null;
   }, [selectedPathIndex, allPathsFromHoveredToGoal, parsed.connections]);
+
+  const simulationPathNodeNames = useMemo(() => {
+    if (
+      !appliedSimulation ||
+      appliedParsedSimulation.movements.length === 0 ||
+      !parsed.startHub
+    ) {
+      return null;
+    }
+
+    const nodeNames = new Set<string>([parsed.startHub.name]);
+    appliedParsedSimulation.movements.forEach((movement) => {
+      movement.path.forEach((zoneName) => nodeNames.add(zoneName));
+    });
+
+    return nodeNames.size > 0 ? nodeNames : null;
+  }, [appliedSimulation, appliedParsedSimulation.movements, parsed.startHub]);
+
+  const simulationPathConnectionKeys = useMemo(() => {
+    if (
+      !appliedSimulation ||
+      appliedParsedSimulation.movements.length === 0 ||
+      !parsed.startHub
+    ) {
+      return null;
+    }
+
+    const edgeKeys = new Set<string>();
+    const traversedEdges = new Set<string>();
+
+    appliedParsedSimulation.movements.forEach((movement) => {
+      const fullPath = [parsed.startHub!.name, ...movement.path];
+      for (let i = 0; i < fullPath.length - 1; i++) {
+        const a = fullPath[i];
+        const b = fullPath[i + 1];
+        const forward = `${a}__${b}`;
+        const reverse = `${b}__${a}`;
+        traversedEdges.add(forward);
+        traversedEdges.add(reverse);
+      }
+    });
+
+    parsed.connections.forEach((conn, index) => {
+      if (traversedEdges.has(`${conn.from}__${conn.to}`)) {
+        edgeKeys.add(`${conn.id}-${conn.lineNumber}-${index}`);
+      }
+    });
+
+    return edgeKeys.size > 0 ? edgeKeys : null;
+  }, [
+    appliedSimulation,
+    appliedParsedSimulation.movements,
+    parsed.startHub,
+    parsed.connections,
+  ]);
 
   const displayedPaths = useMemo(() => {
     if (pathDisplayMode === "all") {
@@ -1155,7 +1228,7 @@ export default function DroneMapVisualizer() {
                 value={simulationInput}
                 onChange={setSimulationInput}
                 onApply={handleApplySimulation}
-                issues={liveParsedSimulation.issues}
+                issues={liveSimulationIssues}
               />
             </div>
 
@@ -1172,16 +1245,16 @@ export default function DroneMapVisualizer() {
                 totalDrones={appliedParsedSimulation.movements.length}
                 completedDrones={completedDronesCount}
                 hasMap={!!appliedText && nodes.length > 0}
-                hasSimulationIssues={appliedParsedSimulation.issues.some(
+                hasSimulationIssues={appliedSimulationIssues.some(
                   (issue) => issue.severity === "error",
                 )}
                 errorMessage={
                   !appliedText || nodes.length === 0
                     ? "Setup map first"
-                    : appliedParsedSimulation.issues.some(
+                    : appliedSimulationIssues.some(
                           (issue) => issue.severity === "error",
                         )
-                      ? `Fix ${appliedParsedSimulation.issues.filter((issue) => issue.severity === "error").length} simulation error(s)`
+                      ? `Fix ${appliedSimulationIssues.filter((issue) => issue.severity === "error").length} simulation error(s)`
                       : ""
                 }
               />
@@ -1696,6 +1769,10 @@ export default function DroneMapVisualizer() {
                         connectedNodeNames={connectedNodeNames}
                         pathNodeNames={pathNodeNames}
                         pathConnectionKeys={pathConnectionKeys}
+                        simulationPathNodeNames={simulationPathNodeNames}
+                        simulationPathConnectionKeys={
+                          simulationPathConnectionKeys
+                        }
                         isPanning={isPanning}
                         onNodeHover={handleNodeHover}
                         onNodeLeave={handleNodeLeave}
