@@ -75,7 +75,7 @@ function getZoomForCellSpacing(
 
 export default function DroneMapVisualizer() {
   const [draftText, setDraftText] = useState<string>(SAMPLE_MAPS["easy-1"]);
-  const [appliedText, setAppliedText] = useState<string>("");
+  const [appliedText, setAppliedText] = useState<string>(SAMPLE_MAPS["easy-1"]);
   const [sampleKey, setSampleKey] = useState<SampleKey>("easy-1");
   const [selectedCategory, setSelectedCategory] = useState<string>("Easy");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
@@ -127,7 +127,6 @@ export default function DroneMapVisualizer() {
     "all",
   );
   const [shouldCalculatePaths, setShouldCalculatePaths] = useState(false);
-  const [shouldDisplayMap, setShouldDisplayMap] = useState(false);
   const [selectedZoneForDetails, setSelectedZoneForDetails] = useState<
     string | null
   >(null);
@@ -601,6 +600,11 @@ export default function DroneMapVisualizer() {
   ]);
 
   useEffect(() => {
+    // Auto-render map from the current editor text.
+    setAppliedText(draftText);
+  }, [draftText]);
+
+  useEffect(() => {
     setHoveredNode(null);
     setHoveredConnection(null);
     setSelectedPathIndex(null);
@@ -683,7 +687,26 @@ export default function DroneMapVisualizer() {
 
   // Keyboard shortcuts (Ctrl+Z for undo, Ctrl+Shift+Z for redo)
   useEffect(() => {
+    function isEditableTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      const tag = target.tagName;
+      return (
+        target.isContentEditable ||
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT"
+      );
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
+      // Keep native editor behavior for map/simulation textareas and other inputs.
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
       // Check for Ctrl+Z (Windows/Linux) or Cmd+Z (Mac) for undo
       if (
         (event.ctrlKey || event.metaKey) &&
@@ -699,6 +722,12 @@ export default function DroneMapVisualizer() {
         event.key === "z" &&
         event.shiftKey
       ) {
+        event.preventDefault();
+        handleRedoDrawing();
+      }
+
+      // VS Code style redo on Windows/Linux.
+      if (event.ctrlKey && event.key.toLowerCase() === "y") {
         event.preventDefault();
         handleRedoDrawing();
       }
@@ -718,6 +747,90 @@ export default function DroneMapVisualizer() {
       document.body.classList.remove("fullscreen");
     }
   }, [isFullscreen]);
+
+  useEffect(() => {
+    function isEditableTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      const tag = target.tagName;
+      return (
+        target.isContentEditable ||
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT"
+      );
+    }
+
+    function handleShortcutKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isEditable = isEditableTarget(target);
+      const isSimulationInput = target?.id === "simulation-input-textarea";
+
+      // Apply simulation from simulation textarea with Ctrl/Cmd+Enter.
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key === "Enter" &&
+        isSimulationInput
+      ) {
+        event.preventDefault();
+        handleApplySimulation();
+        return;
+      }
+
+      // Avoid hijacking normal typing shortcuts/characters in editors.
+      if (isEditable) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        handleResetSimulation();
+        handleResetView();
+        return;
+      }
+
+      if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        handleZoomIn();
+        return;
+      }
+
+      if (event.key === "-") {
+        event.preventDefault();
+        handleZoomOut();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        handleToggleFullscreen();
+        return;
+      }
+
+      if (event.key === "Escape") {
+        if (isFullscreen) {
+          event.preventDefault();
+          setIsFullscreen(false);
+        }
+        setSelectedZone(null);
+        setSelectedZoneForDetails(null);
+        setSelectedPathIndex(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcutKeyDown);
+    return () => window.removeEventListener("keydown", handleShortcutKeyDown);
+  }, [
+    isFullscreen,
+    handleApplySimulation,
+    handleResetSimulation,
+    handleResetView,
+    handleZoomIn,
+    handleZoomOut,
+    handleToggleFullscreen,
+  ]);
 
   function handleUndoDrawing() {
     setDrawnStrokes((prev) => {
@@ -1084,10 +1197,6 @@ export default function DroneMapVisualizer() {
         }
 
         if (next) {
-          if (appliedText && !shouldDisplayMap) {
-            setShouldDisplayMap(true);
-          }
-
           requestAnimationFrame(() => {
             mapSectionRef.current?.scrollIntoView({
               behavior: "smooth",
@@ -1377,6 +1486,7 @@ export default function DroneMapVisualizer() {
                 onChange={setSimulationInput}
                 onApply={handleApplySimulation}
                 issues={liveSimulationIssues}
+                textareaId="simulation-input-textarea"
               />
             </div>
 
@@ -1484,18 +1594,6 @@ export default function DroneMapVisualizer() {
                 <button
                   type="button"
                   onClick={() => {
-                    setAppliedText(draftText);
-                    setShouldDisplayMap(false);
-                    setShouldCalculatePaths(false);
-                    setSelectedPathIndex(null);
-                  }}
-                  className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
-                >
-                  Render map
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
                     setDraftText("");
                     setAppliedText("");
                     setHoveredNode(null);
@@ -1508,6 +1606,7 @@ export default function DroneMapVisualizer() {
               </div>
 
               <textarea
+                id="map-input-textarea"
                 value={draftText}
                 onChange={(event) => setDraftText(event.target.value)}
                 placeholder="Paste drone map text here..."
@@ -1903,81 +2002,64 @@ export default function DroneMapVisualizer() {
                 } bg-slate-950/90`}
               >
                 {appliedText ? (
-                  shouldDisplayMap ? (
-                    <>
-                      <MapCanvas
-                        ref={svgRef}
-                        nodes={nodes}
-                        connections={parsed.connections}
-                        viewBox={interactiveViewBox}
-                        nodeByName={nodeByName}
-                        coordinateScale={COORDINATE_SPACING_FACTOR}
-                        hoveredNode={hoveredNode}
-                        hoveredConnection={hoveredConnection}
-                        selectedZone={selectedZone}
-                        selectedZoneForDetails={selectedZoneForDetails}
-                        connectedNodeNames={connectedNodeNames}
-                        pathNodeNames={pathNodeNames}
-                        pathConnectionKeys={pathConnectionKeys}
-                        simulationPathNodeNames={simulationPathNodeNames}
-                        simulationPathConnectionKeys={
-                          simulationPathConnectionKeys
-                        }
-                        isPanning={isPanning}
-                        onNodeHover={handleNodeHover}
-                        onNodeLeave={handleNodeLeave}
-                        onNodeClick={handleNodeClick}
-                        onConnectionHover={handleConnectionHover}
-                        onConnectionLeave={handleConnectionLeave}
-                        onMapWheel={handleMapWheel}
-                        onMapPointerDown={handleMapPointerDown}
-                        onMapPointerMove={handleMapPointerMove}
-                        onMapPointerEnd={handleMapPointerEnd}
-                        drawnStrokes={drawnStrokes}
-                        isDrawingMode={drawingTool !== null}
-                        onDrawingStart={handleDrawingStart}
-                        onDrawingMove={handleDrawingMove}
-                        onDrawingEnd={handleDrawingEnd}
-                        dronePositions={computedDronePositions}
-                      />
+                  <>
+                    <MapCanvas
+                      ref={svgRef}
+                      nodes={nodes}
+                      connections={parsed.connections}
+                      viewBox={interactiveViewBox}
+                      nodeByName={nodeByName}
+                      coordinateScale={COORDINATE_SPACING_FACTOR}
+                      hoveredNode={hoveredNode}
+                      hoveredConnection={hoveredConnection}
+                      selectedZone={selectedZone}
+                      selectedZoneForDetails={selectedZoneForDetails}
+                      connectedNodeNames={connectedNodeNames}
+                      pathNodeNames={pathNodeNames}
+                      pathConnectionKeys={pathConnectionKeys}
+                      simulationPathNodeNames={simulationPathNodeNames}
+                      simulationPathConnectionKeys={
+                        simulationPathConnectionKeys
+                      }
+                      isPanning={isPanning}
+                      onNodeHover={handleNodeHover}
+                      onNodeLeave={handleNodeLeave}
+                      onNodeClick={handleNodeClick}
+                      onConnectionHover={handleConnectionHover}
+                      onConnectionLeave={handleConnectionLeave}
+                      onMapWheel={handleMapWheel}
+                      onMapPointerDown={handleMapPointerDown}
+                      onMapPointerMove={handleMapPointerMove}
+                      onMapPointerEnd={handleMapPointerEnd}
+                      drawnStrokes={drawnStrokes}
+                      isDrawingMode={drawingTool !== null}
+                      onDrawingStart={handleDrawingStart}
+                      onDrawingMove={handleDrawingMove}
+                      onDrawingEnd={handleDrawingEnd}
+                      dronePositions={computedDronePositions}
+                    />
 
-                      {!hasRenderableMap && (
-                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400 ">
-                          Add a valid map with start and end hubs to see the
-                          visualization.
-                        </div>
-                      )}
-
-                      {blockedNodeMessage && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -8 }}
-                          className="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-center rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-100 backdrop-blur-sm"
-                        >
-                          {blockedNodeMessage}
-                        </motion.div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950/70 px-6 text-center">
-                      <p className="text-sm text-slate-300">
-                        Map configuration ready. Click below to display the
+                    {!hasRenderableMap && (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400 ">
+                        Add a valid map with start and end hubs to see the
                         visualization.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setShouldDisplayMap(true)}
-                        className="rounded-2xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+                      </div>
+                    )}
+
+                    {blockedNodeMessage && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-center rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-100 backdrop-blur-sm"
                       >
-                        Show Map
-                      </button>
-                    </div>
-                  )
+                        {blockedNodeMessage}
+                      </motion.div>
+                    )}
+                  </>
                 ) : (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/70 px-6 text-center text-sm text-slate-400">
-                    Paste a map configuration and click &quot;Render map&quot;
-                    to visualize.
+                    Paste a map configuration to visualize.
                   </div>
                 )}
               </div>

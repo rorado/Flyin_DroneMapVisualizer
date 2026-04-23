@@ -10,6 +10,7 @@ interface SimulationInputProps {
   onApply: () => void;
   issues: ParseIssue[];
   isLoading?: boolean;
+  textareaId?: string;
 }
 
 export function SimulationInput({
@@ -18,6 +19,7 @@ export function SimulationInput({
   onApply,
   issues,
   isLoading = false,
+  textareaId,
 }: SimulationInputProps) {
   const errorCount = issues.filter(
     (issue) => issue.severity === "error",
@@ -49,6 +51,7 @@ export function SimulationInput({
 
       <div className="space-y-1 mb-2">
         <textarea
+          id={textareaId}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="D1-junction D2-start-junction\nD1-junction-goal D2-junction"
