@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { computeViewBox } from "@/lib/geometry";
 import { parseDroneMap } from "@/lib/parser";
 import {
-  getMaxPathLength,
   parseSimulation,
   validateSimulationAgainstMap,
 } from "@/lib/simulation-parser";
@@ -53,6 +52,8 @@ const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 30;
 const TARGET_CELL_SPACING_PX = 600;
 const COORDINATE_SPACING_FACTOR = 4;
+const BASE_TURN_DURATION_MS = 700;
+const TURN_TRAVEL_RATIO = 0.8;
 
 function getZoomForCellSpacing(
   svgElement: SVGSVGElement | null,
@@ -113,6 +114,7 @@ export default function DroneMapVisualizer() {
   const [appliedSimulation, setAppliedSimulation] = useState<string>("");
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [frameProgress, setFrameProgress] = useState(0);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
@@ -150,12 +152,12 @@ export default function DroneMapVisualizer() {
     return zones;
   }, [parsed.startHub, parsed.endHub, parsed.hubs]);
   const liveParsedSimulation = useMemo(
-    () => parseSimulation(simulationInput, validZones),
-    [simulationInput, validZones],
+    () => parseSimulation(simulationInput, validZones, parsed),
+    [simulationInput, validZones, parsed],
   );
   const appliedParsedSimulation = useMemo(
-    () => parseSimulation(appliedSimulation, validZones),
-    [appliedSimulation, validZones],
+    () => parseSimulation(appliedSimulation, validZones, parsed),
+    [appliedSimulation, validZones, parsed],
   );
   const liveSimulationIssues = useMemo(
     () => [
@@ -171,12 +173,6 @@ export default function DroneMapVisualizer() {
     ],
     [appliedParsedSimulation.issues, appliedSimulation, parsed],
   );
-  const maxSimulationFrames = useMemo(() => {
-    const delayFrames = 1;
-    const baseFrames = getMaxPathLength(appliedParsedSimulation.movements);
-    const dronesCount = appliedParsedSimulation.movements.length;
-    return baseFrames + Math.max(0, dronesCount - 1) * delayFrames;
-  }, [appliedParsedSimulation.movements]);
   const sourceNodes = useMemo(() => {
     const seen = new Set<string>();
     return [parsed.startHub, ...parsed.hubs, parsed.endHub].filter(
@@ -226,6 +222,40 @@ export default function DroneMapVisualizer() {
     return map;
   }, [nodes]);
 
+  const maxTurns = useMemo(() => {
+    let overallFinishTurn = 0;
+
+    appliedParsedSimulation.movements.forEach((movement) => {
+      const turns = movement.turns ?? movement.path.map((_, idx) => idx + 1);
+      let droneFinishTurn = 0;
+
+      movement.path.forEach((zoneName, index) => {
+        const moveTurn = turns[index] ?? index + 1;
+        const zoneType = nodeByName.get(zoneName)?.zone;
+        const moveCost = zoneType === "restricted" ? 2 : 1;
+        const arrivalTurn = moveTurn + moveCost - 1;
+        droneFinishTurn = Math.max(droneFinishTurn, arrivalTurn);
+      });
+
+      overallFinishTurn = Math.max(overallFinishTurn, droneFinishTurn);
+    });
+
+    return overallFinishTurn;
+  }, [appliedParsedSimulation.movements, nodeByName]);
+
+  const currentTurn = useMemo(() => {
+    return Math.min(currentFrame, maxTurns);
+  }, [currentFrame, maxTurns]);
+
+  const maxSimulationFrames = useMemo(() => {
+    if (appliedParsedSimulation.movements.length === 0) {
+      return 0;
+    }
+
+    // Frame 0 is initial state, then one frame per turn.
+    return maxTurns + 1;
+  }, [appliedParsedSimulation.movements.length, maxTurns]);
+
   const computedDronePositions = useMemo(() => {
     if (
       !appliedSimulation ||
@@ -238,25 +268,69 @@ export default function DroneMapVisualizer() {
 
     const startHubName = parsed.startHub.name;
     const endHubName = parsed.endHub.name;
-    const delayFrames = 1;
 
     return appliedParsedSimulation.movements.map((movement, droneIdx) => {
-      const droneNumber =
-        parseInt(movement.droneId.slice(1), 10) || droneIdx + 1;
-      const droneFrameOffset = (droneNumber - 1) * delayFrames;
-      const effectiveFrame = Math.max(0, currentFrame - droneFrameOffset);
+      const pathLength = movement.path.length;
+      const turns = movement.turns ?? movement.path.map((_, idx) => idx + 1);
+      const evaluatedTurn = isSimulationRunning
+        ? currentFrame + 1
+        : currentFrame;
+      const turnProgress = isSimulationRunning ? frameProgress : 0;
+
+      if (pathLength === 0) {
+        const startZone = nodeByName.get(startHubName);
+        if (!startZone) {
+          return {
+            droneId: movement.droneId,
+            x: 0,
+            y: 0,
+            nextX: 0,
+            nextY: 0,
+            progress: 0,
+            completed: false,
+          };
+        }
+
+        return {
+          droneId: movement.droneId,
+          x: startZone.x,
+          y: startZone.y,
+          nextX: startZone.x,
+          nextY: startZone.y,
+          progress: 0,
+          completed: false,
+        };
+      }
 
       let currentZoneName = startHubName;
-      if (effectiveFrame > 0 && movement.path.length > 0) {
-        const pathIndex = Math.min(
-          effectiveFrame - 1,
-          movement.path.length - 1,
-        );
-        currentZoneName = movement.path[pathIndex] ?? startHubName;
+      let nextZoneName = startHubName;
+      let progress = 0;
+
+      for (let i = 0; i < pathLength; i += 1) {
+        const moveTurn = turns[i] ?? i + 1;
+        const destinationZoneName = movement.path[i];
+
+        if (moveTurn > evaluatedTurn) {
+          break;
+        }
+
+        if (isSimulationRunning && moveTurn === evaluatedTurn) {
+          currentZoneName =
+            i === 0 ? startHubName : (movement.path[i - 1] ?? startHubName);
+          nextZoneName = destinationZoneName;
+          progress = turnProgress;
+          break;
+        }
+
+        currentZoneName = destinationZoneName;
+        nextZoneName = destinationZoneName;
+        progress = 0;
       }
 
       const currentZone = nodeByName.get(currentZoneName);
-      if (!currentZone) {
+      const nextZone = nodeByName.get(nextZoneName);
+
+      if (!currentZone || !nextZone) {
         return {
           droneId: movement.droneId,
           x: 0,
@@ -268,14 +342,19 @@ export default function DroneMapVisualizer() {
         };
       }
 
+      const completed =
+        currentZoneName === endHubName && !isSimulationRunning
+          ? true
+          : currentZoneName === endHubName && progress === 0;
+
       return {
         droneId: movement.droneId,
         x: currentZone.x,
         y: currentZone.y,
-        nextX: currentZone.x,
-        nextY: currentZone.y,
-        progress: 0,
-        completed: currentZoneName === endHubName,
+        nextX: nextZone.x,
+        nextY: nextZone.y,
+        progress,
+        completed,
       };
     });
   }, [
@@ -284,6 +363,8 @@ export default function DroneMapVisualizer() {
     parsed.startHub,
     parsed.endHub,
     currentFrame,
+    frameProgress,
+    isSimulationRunning,
     nodeByName,
   ]);
 
@@ -555,6 +636,7 @@ export default function DroneMapVisualizer() {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
       }
+      setFrameProgress(0);
       return;
     }
 
@@ -564,10 +646,15 @@ export default function DroneMapVisualizer() {
       }
 
       const deltaTime = timestamp - lastFrameTimeRef.current;
-      const framesPerSecond = 60;
-      const msPerFrame = 1000 / (framesPerSecond * simulationSpeed);
+      const msPerTurn = BASE_TURN_DURATION_MS / simulationSpeed;
+      const rawTurnProgress = Math.min(deltaTime / msPerTurn, 1);
+      const cycleProgress =
+        rawTurnProgress < TURN_TRAVEL_RATIO
+          ? rawTurnProgress / TURN_TRAVEL_RATIO
+          : 1;
+      setFrameProgress(cycleProgress);
 
-      if (deltaTime >= msPerFrame) {
+      if (deltaTime >= msPerTurn) {
         setCurrentFrame((prev) => {
           const next = prev + 1;
           if (next >= maxSimulationFrames) {
@@ -576,6 +663,7 @@ export default function DroneMapVisualizer() {
           }
           return next;
         });
+        setFrameProgress(0);
         lastFrameTimeRef.current = timestamp;
       }
 
@@ -977,6 +1065,7 @@ export default function DroneMapVisualizer() {
   function handleApplySimulation() {
     setAppliedSimulation(simulationInput);
     setCurrentFrame(0);
+    setFrameProgress(0);
     setIsSimulationRunning(false);
   }
 
@@ -984,6 +1073,15 @@ export default function DroneMapVisualizer() {
     if (maxSimulationFrames > 0) {
       setIsSimulationRunning((prev) => {
         const next = !prev;
+
+        if (!next) {
+          const snappedFrame = Math.min(
+            currentFrame + (frameProgress > 0 ? 1 : 0),
+            Math.max(0, maxSimulationFrames - 1),
+          );
+          setCurrentFrame(snappedFrame);
+          setFrameProgress(0);
+        }
 
         if (next) {
           if (appliedText && !shouldDisplayMap) {
@@ -1005,6 +1103,7 @@ export default function DroneMapVisualizer() {
 
   function handleResetSimulation() {
     setCurrentFrame(0);
+    setFrameProgress(0);
     setIsSimulationRunning(false);
   }
 
@@ -1012,6 +1111,7 @@ export default function DroneMapVisualizer() {
     setSimulationInput("");
     setAppliedSimulation("");
     setCurrentFrame(0);
+    setFrameProgress(0);
     setIsSimulationRunning(false);
   }
 
@@ -1029,42 +1129,90 @@ export default function DroneMapVisualizer() {
       parsed.connections,
     );
 
-    // Exclude the start hub and keep intermediate + goal zones.
-    const movementZones = path.slice(1);
-    if (movementZones.length === 0) {
+    if (path.length < 2) {
       setSimulationInput(
         "# Unable to generate simulation. No valid path from start_hub to end_hub.",
       );
       return;
     }
 
-    const droneCount = parsed.nbDrones;
-    const totalFrames = movementZones.length + droneCount - 1;
-    const lines: string[] = [];
+    const movementTokensPerDrone: string[] = [];
+    // Build one drone route as connection tokens. For restricted destinations,
+    // duplicate the same connection to represent the in-flight extra turn.
+    for (let i = 0; i < path.length - 1; i += 1) {
+      const fromZone = path[i];
+      const toZone = path[i + 1];
+      const connectionToken = `${fromZone}-${toZone}`;
+      movementTokensPerDrone.push(connectionToken);
 
-    // Build pipelined movements, one frame per line (D1 starts first, then D2, ...).
-    for (let frame = 1; frame <= totalFrames; frame++) {
-      const tokens: string[] = [];
-
-      for (let drone = 1; drone <= droneCount; drone++) {
-        const step = frame - (drone - 1);
-        if (step >= 1 && step <= movementZones.length) {
-          tokens.push(`D${drone}-${movementZones[step - 1]}`);
-        }
-      }
-
-      if (tokens.length > 0) {
-        lines.push(tokens.join(" "));
+      const destinationZoneType = nodeByName.get(toZone)?.zone;
+      if (destinationZoneType === "restricted") {
+        movementTokensPerDrone.push(connectionToken);
       }
     }
 
-    setSimulationInput(lines.join("\n"));
+    if (movementTokensPerDrone.length === 0) {
+      setSimulationInput(
+        "# Unable to generate simulation. No movement tokens generated from path.",
+      );
+      return;
+    }
+
+    const droneCount = parsed.nbDrones;
+    const buildScheduleWithGap = (startGap: number) => {
+      const lines: string[] = [];
+      const totalFrames =
+        movementTokensPerDrone.length + (droneCount - 1) * startGap;
+
+      for (let frame = 1; frame <= totalFrames; frame += 1) {
+        const tokens: string[] = [];
+
+        for (let drone = 1; drone <= droneCount; drone += 1) {
+          const step = frame - (drone - 1) * startGap;
+          if (step >= 1 && step <= movementTokensPerDrone.length) {
+            tokens.push(`D${drone}-${movementTokensPerDrone[step - 1]}`);
+          }
+        }
+
+        if (tokens.length > 0) {
+          lines.push(tokens.join(" "));
+        }
+      }
+
+      return lines.join("\n");
+    };
+
+    // Try progressively wider start gaps and keep the first fully valid schedule.
+    let generatedSchedule = "";
+    for (
+      let startGap = 1;
+      startGap <= movementTokensPerDrone.length;
+      startGap += 1
+    ) {
+      const candidate = buildScheduleWithGap(startGap);
+      const hasErrors = validateSimulationAgainstMap(candidate, parsed).some(
+        (issue) => issue.severity === "error",
+      );
+
+      if (!hasErrors) {
+        generatedSchedule = candidate;
+        break;
+      }
+    }
+
+    // Fallback to serialized starts if no gap produced an error-free schedule.
+    if (!generatedSchedule) {
+      generatedSchedule = buildScheduleWithGap(movementTokensPerDrone.length);
+    }
+
+    setSimulationInput(generatedSchedule);
     setIsSimulationRunning(false);
     setCurrentFrame(0);
   }
 
   function handleFrameChange(frame: number) {
     setIsSimulationRunning(false);
+    setFrameProgress(0);
     setCurrentFrame(
       Math.max(0, Math.min(frame, Math.max(0, maxSimulationFrames - 1))),
     );
@@ -1257,6 +1405,8 @@ export default function DroneMapVisualizer() {
                       ? `Fix ${appliedSimulationIssues.filter((issue) => issue.severity === "error").length} simulation error(s)`
                       : ""
                 }
+                currentTurn={currentTurn}
+                maxTurns={maxTurns}
               />
             </div>
           </div>
@@ -1517,7 +1667,7 @@ export default function DroneMapVisualizer() {
                             (
                             {totalTurns === -1
                               ? "invalid"
-                              : `${totalTurns} turns`}
+                              : `${totalTurns} costs`}
                             )
                           </div>
                           <div className="flex flex-wrap items-center gap-1 whitespace-normal">

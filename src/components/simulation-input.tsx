@@ -39,6 +39,10 @@ export function SimulationInput({
           Format:{" "}
           <code className="bg-slate-800 px-1.5 py-0.5 rounded text-cyan-400 text-xs">
             D[num]-[zone]
+          </code>{" "}
+          or{" "}
+          <code className="bg-slate-800 px-1.5 py-0.5 rounded text-cyan-400 text-xs">
+            D[num]-[from]-[to]
           </code>
         </p>
       </div>
@@ -47,7 +51,7 @@ export function SimulationInput({
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="D1-zoneA D2-zoneA\nD1-zoneB D2-zoneB"
+          placeholder="D1-junction D2-start-junction\nD1-junction-goal D2-junction"
           className="w-full h-20 bg-slate-800 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
         />
       </div>

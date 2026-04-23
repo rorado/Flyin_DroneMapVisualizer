@@ -6,8 +6,8 @@ import {
   Pause,
   RotateCcw,
   Zap,
-  ChevronUp,
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 interface SimulationControlsProps {
@@ -24,6 +24,8 @@ interface SimulationControlsProps {
   hasMap?: boolean;
   hasSimulationIssues?: boolean;
   errorMessage?: string;
+  currentTurn?: number;
+  maxTurns?: number;
 }
 
 export function SimulationControls({
@@ -40,6 +42,8 @@ export function SimulationControls({
   hasMap = false,
   hasSimulationIssues = false,
   errorMessage = "",
+  currentTurn = 0,
+  maxTurns = 0,
 }: SimulationControlsProps) {
   const speedOptions = [0.01, 0.25, 1, 1.5, 2];
   const maxFrameIndex = Math.max(0, maxFrames - 1);
@@ -47,6 +51,8 @@ export function SimulationControls({
     maxFrameIndex > 0 ? (currentFrame / maxFrameIndex) * 100 : 100;
 
   const canPlay = hasMap && !hasSimulationIssues && totalDrones > 0;
+  const canStepBack = currentFrame > 0;
+  const canStepNext = currentFrame < maxFrameIndex;
 
   return (
     <motion.div
@@ -93,8 +99,44 @@ export function SimulationControls({
         </motion.button>
 
         <div className="flex-1 text-right text-xs text-slate-400">
-          Frame {currentFrame} / {maxFrameIndex}
+          Frame {currentFrame} / {maxFrameIndex} • Turn {currentTurn} /{" "}
+          {maxTurns}
         </div>
+      </div>
+
+      {/* Step Controls */}
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <motion.button
+          whileHover={canStepBack ? { scale: 1.02 } : {}}
+          whileTap={canStepBack ? { scale: 0.98 } : {}}
+          onClick={() => onFrameChange(Math.max(0, currentFrame - 1))}
+          disabled={!canStepBack}
+          className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+            canStepBack
+              ? "bg-slate-700 text-slate-100 hover:bg-slate-600"
+              : "bg-slate-800 text-slate-500 cursor-not-allowed"
+          }`}
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Move Back
+        </motion.button>
+
+        <motion.button
+          whileHover={canStepNext ? { scale: 1.02 } : {}}
+          whileTap={canStepNext ? { scale: 0.98 } : {}}
+          onClick={() =>
+            onFrameChange(Math.min(maxFrameIndex, currentFrame + 1))
+          }
+          disabled={!canStepNext}
+          className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+            canStepNext
+              ? "bg-slate-700 text-slate-100 hover:bg-slate-600"
+              : "bg-slate-800 text-slate-500 cursor-not-allowed"
+          }`}
+        >
+          Move Next
+          <ChevronRight className="h-3.5 w-3.5" />
+        </motion.button>
       </div>
 
       {/* Error Message */}
@@ -167,6 +209,10 @@ export function SimulationControls({
             </div>
             <span className="text-xs text-slate-400">/ {totalDrones}</span>
           </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+          <span>Total Turns</span>
+          <span className="font-semibold text-cyan-300">{maxTurns}</span>
         </div>
       </div>
     </motion.div>

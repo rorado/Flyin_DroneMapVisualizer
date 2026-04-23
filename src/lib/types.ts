@@ -42,6 +42,7 @@ export interface ParsedMap {
 export interface DroneMovement {
   droneId: string;
   path: string[]; // Sequence of zone names
+  turns?: number[]; // Turn number for each move in path
 }
 
 export interface DroneState {
