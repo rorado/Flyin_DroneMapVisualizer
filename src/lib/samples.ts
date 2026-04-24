@@ -486,6 +486,156 @@ connection: priority_trap1-conv_restricted4`,
 
 export type SampleKey = keyof typeof SAMPLE_MAPS;
 
+export const SAMPLE_SIMULATIONS: Record<SampleKey, string> = {
+  "easy-1": `# Linear Path - Valid Simulation
+# 2 drones, each connection has capacity 1 (default)
+# Turn 1: D1 moves to waypoint1
+D1-waypoint1
+# Turn 2: D1 continues, D2 enters waypoint1
+D1-waypoint2 D2-waypoint1
+# Turn 3: D1 reaches goal, D2 continues
+D1-goal D2-waypoint2
+# Turn 4: D2 reaches goal
+D2-goal`,
+
+  "easy-2": `# Simple Fork - Valid Simulation
+# 3 drones split between two paths
+# Each connection has capacity 1 (default)
+# Turn 1: D1 reaches junction
+D1-junction
+# Turn 2: D1 takes path_a, D2 enters junction
+D1-path_a D2-junction
+# Turn 3: D1 reaches goal, D2 takes path_b, D3 enters junction
+D1-goal D2-path_b D3-junction
+# Turn 4: D2 reaches goal, D3 takes path_a
+D2-goal D3-path_a
+# Turn 5: D3 reaches goal
+D3-goal`,
+
+  "easy-3": `# Basic Capacity - Valid Simulation
+# 4 drones with bottleneck (max_drones=2)
+# Each connection has capacity 1 (default)
+# Turn 1: D1 enters bottleneck
+D1-bottleneck
+# Turn 2: D1 continues, D2 enters bottleneck (total 2 in bottleneck)
+D1-wide_area D2-bottleneck
+# Turn 3: D2 continues, D3 enters bottleneck
+D2-wide_area D3-bottleneck
+# Turn 4: D3 continues, D4 enters bottleneck
+D3-wide_area D4-bottleneck
+# Turn 5: D1 reaches goal, D4 continues
+D1-goal D4-wide_area
+# Turn 6: D2 reaches goal
+D2-goal D4-goal
+# Turn 7: D3 reaches goal
+D3-goal`,
+
+  "medium-1": `# Dead End Trap - Avoid dead end
+# Take the correct path
+D1-junction
+D1-correct_path D2-junction
+D1-intermediate D2-correct_path D3-junction
+D1-goal D2-intermediate D3-correct_path
+D2-goal D4-junction
+D3-intermediate D4-correct_path
+D3-goal D5-junction
+D4-intermediate D5-correct_path
+D4-goal
+D5-intermediate
+D5-goal`,
+
+  "medium-2": `# Circular Loop - Navigate the loop
+# All restricted zones, must arrive at exit_point
+D1-loop_a
+D1-loop_b D2-loop_a
+D1-loop_c D2-loop_b D3-loop_a
+D1-loop_d D2-loop_c D3-loop_b D4-loop_a
+D1-loop_a D2-loop_d D3-loop_c D4-loop_b D5-loop_a
+D1-loop_b D2-loop_a D3-loop_d D4-loop_c D5-loop_b D6-loop_a
+D1-exit_point D2-loop_b D3-loop_a D4-loop_d D5-loop_c D6-loop_b
+D1-goal D2-exit_point D3-loop_b D4-loop_a D5-loop_d D6-loop_c
+D2-goal D3-exit_point D4-loop_b D5-loop_a D6-loop_d
+D3-goal D4-exit_point D5-loop_b D6-loop_a
+D4-goal D5-exit_point D6-loop_b
+D5-goal D6-exit_point
+D6-goal`,
+
+  "medium-3": `# Priority Puzzle - Use fast path
+# Take priority path for faster delivery
+D1-fast_junction
+D1-fast_path D2-fast_junction
+D1-merge_point D2-fast_path D3-slow_path1
+D1-goal D2-merge_point D3-slow_path2 D4-fast_junction
+D2-goal D3-slow_path3 D4-fast_path
+D3-merge_point D4-merge_point
+D3-goal
+D4-goal`,
+
+  "hard-1": `# Maze Nightmare - Complex routing
+# Navigate through the maze carefully
+D1-hub_a1
+D1-hub_a2 D2-hub_a1
+D1-hub_a3 D2-hub_a2 D3-hub_a1
+D1-hub_b2 D2-hub_a3 D3-hub_a2 D4-hub_a1
+D1-hub_b3 D2-hub_b2 D3-hub_a3 D4-hub_a2 D5-hub_a1
+D1-hub_c2 D2-hub_b3 D3-hub_b2 D4-hub_a3 D5-hub_a2 D6-hub_a1
+D1-hub_center D2-hub_c2 D3-hub_b3 D4-hub_b2 D5-hub_a3 D6-hub_a2
+D1-hub_d1 D2-hub_center D3-hub_c2 D4-hub_b3 D5-hub_b2 D6-hub_a3
+D1-hub_d2 D2-hub_d1 D3-hub_center D4-hub_c2 D5-hub_b3 D6-hub_b2
+D1-final_hub D2-hub_d2 D3-hub_d1 D4-hub_center D5-hub_c2 D6-hub_b3
+D1-goal D2-final_hub D3-hub_d2 D4-hub_d1 D5-hub_center D6-hub_c2
+D2-goal D3-final_hub D4-hub_d2 D5-hub_d1 D6-hub_center
+D3-goal D4-final_hub D5-hub_d2 D6-hub_d1
+D4-goal D5-final_hub D6-hub_d2
+D5-goal D6-final_hub
+D6-goal`,
+
+  "hard-2": `# Capacity Hell - Extreme constraints
+# Manage tight capacity limits
+D1-checkpoint1
+D1-checkpoint2 D2-checkpoint1
+D1-checkpoint3 D2-checkpoint2 D3-checkpoint1
+D1-checkpoint4 D2-checkpoint3 D3-checkpoint2 D4-checkpoint1
+D1-final_hub D2-checkpoint4 D3-checkpoint3 D4-checkpoint2 D5-checkpoint1
+D1-goal D2-final_hub D3-checkpoint4 D4-checkpoint3 D5-checkpoint2 D6-checkpoint1
+D2-goal D3-final_hub D4-checkpoint4 D5-checkpoint3 D6-checkpoint2
+D3-goal D4-final_hub D5-checkpoint4 D6-checkpoint3
+D4-goal D5-final_hub D6-checkpoint4
+D5-goal D6-final_hub
+D6-goal`,
+
+  "hard-3": `# Ultimate Challenge - All tricks combined
+# Complex navigation with multiple constraints
+D1-path1_step1
+D1-path1_step2 D2-path1_step1
+D1-path1_step3 D2-path1_step2 D3-path2_step1
+D1-junction D2-path1_step3 D3-path2_step2 D4-path1_step1
+D1-path2_step1 D2-junction D3-path2_step3 D4-path1_step2 D5-path2_step1
+D1-path2_step2 D2-path2_step1 D3-junction D4-path1_step3 D5-path2_step2 D6-path2_step1
+D1-path2_step3 D2-path2_step2 D3-path2_step1 D4-junction D5-path2_step3 D6-path2_step2
+D1-final D2-path2_step3 D3-path2_step2 D4-path2_step1 D5-final D6-path2_step3
+D1-goal D2-final D3-path2_step3 D4-path2_step2 D6-final
+D2-goal D3-final D4-path2_step3
+D3-goal D4-final
+D4-goal D5-goal
+D6-goal`,
+
+  "challenger-1": `# The Impossible Dream - Ultimate test
+# Master routing puzzle - find the optimal solution
+D1-zone_a1
+D1-zone_a2 D2-zone_a1
+D1-zone_a3 D2-zone_a2 D3-zone_b1
+D1-zone_b1 D2-zone_a3 D3-zone_b2 D4-zone_a1
+D1-zone_b2 D2-zone_b1 D3-zone_b3 D4-zone_a2 D5-zone_c1
+D1-zone_b3 D2-zone_b2 D3-zone_hub D4-zone_a3 D5-zone_c2 D6-zone_b1
+D1-hub D2-zone_b3 D3-zone_c1 D4-zone_b1 D5-zone_c3 D6-zone_b2
+D1-goal D2-hub D3-zone_c2 D4-zone_b2 D6-zone_b3
+D2-goal D3-zone_c3 D4-zone_b3
+D3-hub D5-zone_hub
+D3-goal D4-hub D5-goal D6-hub
+D4-goal D6-goal`,
+};
+
 export const SAMPLE_OPTIONS: Array<{
   value: SampleKey;
   label: string;

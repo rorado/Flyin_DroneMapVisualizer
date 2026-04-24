@@ -54,7 +54,7 @@ export function SimulationInput({
           id={textareaId}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="D1-junction D2-start-junction\nD1-junction-goal D2-junction"
+          placeholder="# Example for the default map\nD1-waypoint1\nD1-waypoint2 D2-waypoint1\nD1-goal D2-waypoint2\nD2-goal"
           className="w-full h-20 bg-slate-800 border border-slate-600 rounded-lg p-2 text-white placeholder-slate-500 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
         />
       </div>

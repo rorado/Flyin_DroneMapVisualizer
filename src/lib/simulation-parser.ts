@@ -256,8 +256,8 @@ export function validateSimulationAgainstMap(
     adjacency.get(conn.from)!.add(conn.to);
     adjacency.get(conn.to)!.add(conn.from);
 
-    // If max_link_capacity is not provided, allow unlimited drones on that edge.
-    const cap = conn.maxLinkCapacity ?? Number.POSITIVE_INFINITY;
+    // If max_link_capacity is not provided, default capacity is 1 (one drone per turn).
+    const cap = conn.maxLinkCapacity ?? 1;
     connectionCapByEdge.set(`${conn.from}__${conn.to}`, cap);
     connectionCapByEdge.set(`${conn.to}__${conn.from}`, cap);
   }

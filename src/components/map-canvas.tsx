@@ -55,8 +55,6 @@ export type MapCanvasProps = {
     progress: number;
     completed: boolean;
   }>;
-  selectedDrone?: string | null;
-  onDroneClick?: (droneId: string) => void;
   onMapClick?: () => void;
 };
 
@@ -93,8 +91,6 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       onDrawingMove,
       onDrawingEnd,
       dronePositions,
-      selectedDrone,
-      onDroneClick,
       onMapClick,
     },
     ref,
@@ -477,37 +473,6 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                   />
                 )}
 
-                {selectedZone === node.name && (
-                  <circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={radius + 0.6}
-                    fill="none"
-                    stroke="#6ee7b7"
-                    strokeWidth="0.15"
-                    opacity="0.95"
-                  />
-                )}
-
-                {selectedZoneForDetails === node.name && (
-                  <motion.circle
-                    cx={node.x}
-                    cy={node.y}
-                    r={radius + 0.8}
-                    fill="none"
-                    stroke="#60a5fa"
-                    strokeWidth="0.1"
-                    opacity="0.7"
-                    animate={{
-                      r: [radius + 0.8, radius + 1.1, radius + 0.8],
-                    }}
-                    transition={{
-                      duration: 1.5,
-                      repeat: Infinity,
-                    }}
-                  />
-                )}
-
                 {node.role === "start" ? (
                   <motion.circle
                     cx={node.x}
@@ -704,13 +669,6 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     fill={color}
                     stroke="#ffffff"
                     strokeWidth={0.06 * droneScale}
-                    style={{ cursor: "pointer" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onDroneClick) {
-                        onDroneClick(drone.droneId);
-                      }
-                    }}
                     filter={
                       drone.completed
                         ? "drop-shadow(0 0 0.4px rgba(16, 185, 129, 1)) drop-shadow(0 0 0.8px rgba(16, 185, 129, 0.6))"
@@ -822,6 +780,51 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                         opacity="0.8"
                       />
                     </motion.g>
+                  )}
+                </g>
+              );
+            })}
+          </motion.g>
+        )}
+
+        {/* Zone Selection Indicators - Rendered on top of drones */}
+        {(selectedZone || selectedZoneForDetails) && (
+          <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {nodes.map((node) => {
+              const radius = getNodeRadius(node);
+              return (
+                <g key={`zone-indicator-${node.name}`}>
+                  {selectedZone === node.name && (
+                    <circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={radius + 0.6}
+                      fill="none"
+                      stroke="#6ee7b7"
+                      strokeWidth="0.15"
+                      opacity="0.95"
+                      pointerEvents="none"
+                    />
+                  )}
+
+                  {selectedZoneForDetails === node.name && (
+                    <motion.circle
+                      cx={node.x}
+                      cy={node.y}
+                      r={radius + 0.8}
+                      fill="none"
+                      stroke="#60a5fa"
+                      strokeWidth="0.1"
+                      opacity="0.7"
+                      animate={{
+                        r: [radius + 0.8, radius + 1.1, radius + 0.8],
+                      }}
+                      transition={{
+                        duration: 1.5,
+                        repeat: Infinity,
+                      }}
+                      pointerEvents="none"
+                    />
                   )}
                 </g>
               );

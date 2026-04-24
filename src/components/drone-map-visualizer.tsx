@@ -130,7 +130,6 @@ export default function DroneMapVisualizer() {
   const [selectedZoneForDetails, setSelectedZoneForDetails] = useState<
     string | null
   >(null);
-  const [selectedDrone, setSelectedDrone] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const mapSectionRef = useRef<HTMLElement | null>(null);
   const panPointerRef = useRef<{
@@ -288,6 +287,8 @@ export default function DroneMapVisualizer() {
             nextY: 0,
             progress: 0,
             completed: false,
+            currentZoneName: startHubName,
+            nextZoneName: startHubName,
           };
         }
 
@@ -299,6 +300,8 @@ export default function DroneMapVisualizer() {
           nextY: startZone.y,
           progress: 0,
           completed: false,
+          currentZoneName: startHubName,
+          nextZoneName: startHubName,
         };
       }
 
@@ -339,6 +342,8 @@ export default function DroneMapVisualizer() {
           nextY: 0,
           progress: 0,
           completed: false,
+          currentZoneName,
+          nextZoneName,
         };
       }
 
@@ -355,6 +360,8 @@ export default function DroneMapVisualizer() {
         nextY: nextZone.y,
         progress,
         completed,
+        currentZoneName,
+        nextZoneName,
       };
     });
   }, [
@@ -367,6 +374,29 @@ export default function DroneMapVisualizer() {
     isSimulationRunning,
     nodeByName,
   ]);
+
+  const selectedZoneDroneInfo = useMemo(() => {
+    if (!selectedZoneForDetails) return { dronesInZone: [], zoneNode: null };
+
+    const zoneNode =
+      parsed.startHub?.name === selectedZoneForDetails
+        ? parsed.startHub
+        : parsed.endHub?.name === selectedZoneForDetails
+          ? parsed.endHub
+          : parsed.hubs.find((hub) => hub.name === selectedZoneForDetails);
+
+    if (!zoneNode) return { dronesInZone: [], zoneNode: null };
+
+    const dronesInZone = computedDronePositions
+      .filter(
+        (d) =>
+          d.currentZoneName === selectedZoneForDetails ||
+          (d.progress > 0 && d.nextZoneName === selectedZoneForDetails),
+      )
+      .map((d) => d.droneId);
+
+    return { dronesInZone, zoneNode };
+  }, [selectedZoneForDetails, computedDronePositions, parsed]);
 
   const connectedNodeNames = useMemo(() => {
     if (hoveredConnection) {
@@ -601,8 +631,12 @@ export default function DroneMapVisualizer() {
   ]);
 
   useEffect(() => {
-    // Auto-render map from the current editor text.
-    setAppliedText(draftText);
+    // Debounce map rendering while typing in the map editor.
+    const timeoutId = setTimeout(() => {
+      setAppliedText(draftText);
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
   }, [draftText]);
 
   useEffect(() => {
@@ -611,11 +645,12 @@ export default function DroneMapVisualizer() {
     setSelectedPathIndex(null);
     setSelectedZone(null);
 
-    // Reset simulation whenever the rendered map changes.
+    // Clear simulation whenever the rendered map changes.
     setSimulationInput("");
     setAppliedSimulation("");
     setIsSimulationRunning(false);
     setCurrentFrame(0);
+    setFrameProgress(0);
   }, [appliedText]);
 
   useEffect(() => {
@@ -1102,56 +1137,11 @@ export default function DroneMapVisualizer() {
     const isToggling = selectedZoneForDetails === name;
     setSelectedZoneForDetails(isToggling ? null : name);
     setSelectedZone(isToggling ? null : name);
-    if (!isToggling) {
-      // Find a drone in this zone if any
-      const nodeData = Array.from(nodeByName.values()).find(
-        (n) => n.name === name,
-      );
-      if (nodeData) {
-        const droneInZone = computedDronePositions.find(
-          (d) =>
-            Math.abs(d.x - nodeData.x) < 0.1 &&
-            Math.abs(d.y - nodeData.y) < 0.1,
-        );
-        if (droneInZone) {
-          setSelectedDrone(droneInZone.droneId);
-        } else {
-          setSelectedDrone(null);
-        }
-      }
-    } else {
-      setSelectedDrone(null);
-    }
-  }
-
-  function handleDroneClick(droneId: string) {
-    const isToggling = selectedDrone === droneId;
-    if (isToggling) {
-      setSelectedDrone(null);
-      setSelectedZoneForDetails(null);
-    } else {
-      setSelectedDrone(droneId);
-      // Find the current zone of the drone
-      const droneInfo = computedDronePositions.find(
-        (d) => d.droneId === droneId,
-      );
-      if (droneInfo) {
-        const node = Array.from(nodeByName.values()).find(
-          (n) =>
-            Math.abs(n.x - droneInfo.x) < 0.1 &&
-            Math.abs(n.y - droneInfo.y) < 0.1,
-        );
-        if (node) {
-          setSelectedZoneForDetails(node.name);
-        }
-      }
-    }
   }
 
   function handleMapBackgroundClick() {
     setSelectedZone(null);
     setSelectedZoneForDetails(null);
-    setSelectedDrone(null);
   }
 
   function handleConnectionHover(id: string) {
@@ -1283,35 +1273,16 @@ export default function DroneMapVisualizer() {
       return;
     }
 
-    const fallbackPath = findPathBetweenNodes(
-      parsed.startHub.name,
-      parsed.endHub.name,
-      parsed.connections,
-    );
-
-    if (fallbackPath.length < 2) {
-      setSimulationInput(
-        "# Unable to generate simulation. No valid path from start_hub to end_hub.",
-      );
-      return;
-    }
-
-    const droneCount = parsed.nbDrones;
-
-    const buildMovementTokensForPath = (path: string[]) => {
+    const buildDroneTokenSequence = (path: string[]) => {
       const tokens: string[] = [];
 
-      // Build one drone route with this rule:
-      // if next zone is restricted => move via connection, then explicit zone token.
-      // otherwise => move directly to the destination zone token.
-      for (let i = 0; i < path.length - 1; i += 1) {
-        const fromZone = path[i];
-        const toZone = path[i + 1];
-        const connectionToken = `${fromZone}-${toZone}`;
+      for (let i = 1; i < path.length; i += 1) {
+        const fromZone = path[i - 1];
+        const toZone = path[i];
+        const toZoneType = nodeByName.get(toZone)?.zone;
 
-        const destinationZoneType = nodeByName.get(toZone)?.zone;
-        if (destinationZoneType === "restricted") {
-          tokens.push(connectionToken);
+        if (toZoneType === "restricted") {
+          tokens.push(`${fromZone}-${toZone}`);
           tokens.push(toZone);
         } else {
           tokens.push(toZone);
@@ -1321,830 +1292,83 @@ export default function DroneMapVisualizer() {
       return tokens;
     };
 
-    const buildDynamicScheduleForPath = (movementTokensPerDrone: string[]) => {
+    const buildStaggeredSchedule = (path: string[]) => {
+      const droneCount = parsed.nbDrones ?? 1;
+      const perDroneTokens = Array.from({ length: droneCount }, () =>
+        buildDroneTokenSequence(path),
+      );
+      const maxTokenLength = Math.max(
+        ...perDroneTokens.map((tokens) => tokens.length),
+        0,
+      );
       const lines: string[] = [];
-      const startZoneName = parsed.startHub!.name;
-      const endZoneName = parsed.endHub!.name;
 
-      const connectionCapByEdge = new Map<string, number>();
-      for (const conn of parsed.connections) {
-        const cap = conn.maxLinkCapacity ?? Number.POSITIVE_INFINITY;
-        connectionCapByEdge.set(`${conn.from}__${conn.to}`, cap);
-        connectionCapByEdge.set(`${conn.to}__${conn.from}`, cap);
-      }
+      for (let turn = 0; turn < maxTokenLength + droneCount - 1; turn += 1) {
+        const turnTokens: string[] = [];
 
-      const zoneCapacity = (zoneName: string) => {
-        if (zoneName === startZoneName || zoneName === endZoneName) {
-          return Number.POSITIVE_INFINITY;
-        }
-
-        const zoneNode = nodeByName.get(zoneName);
-        if (!zoneNode) {
-          return Number.POSITIVE_INFINITY;
-        }
-
-        return (
-          zoneNode.maxDrones ??
-          (zoneNode.zone === "restricted" ? Number.POSITIVE_INFINITY : 1)
-        );
-      };
-
-      const droneStates = Array.from({ length: droneCount }, (_, idx) => ({
-        droneId: `D${idx + 1}`,
-        currentZone: startZoneName,
-        stepIndex: 0,
-        delivered: false,
-      }));
-
-      const maxTurns = movementTokensPerDrone.length * droneCount * 2 + 200;
-
-      for (let turn = 0; turn < maxTurns; turn += 1) {
-        if (droneStates.every((drone) => drone.delivered)) {
-          break;
-        }
-
-        const occupancyBefore = new Map<string, number>();
-        droneStates.forEach((drone) => {
-          if (!drone.delivered) {
-            occupancyBefore.set(
-              drone.currentZone,
-              (occupancyBefore.get(drone.currentZone) ?? 0) + 1,
-            );
-          }
-        });
-
-        const edgeUseCount = new Map<string, number>();
-        const leavingCount = new Map<string, number>();
-        const enteringCount = new Map<string, number>();
-        const acceptedMoves: Array<{
-          droneIndex: number;
-          token: string;
-          destinationZone: string;
-          isHold: boolean;
-        }> = [];
-
-        const getProjectedOccupancy = (zoneName: string) => {
-          const before = occupancyBefore.get(zoneName) ?? 0;
-          const leaving = leavingCount.get(zoneName) ?? 0;
-          const entering = enteringCount.get(zoneName) ?? 0;
-          return before - leaving + entering;
-        };
-
-        for (
-          let droneIndex = 0;
-          droneIndex < droneStates.length;
-          droneIndex += 1
-        ) {
-          const drone = droneStates[droneIndex];
-          if (
-            drone.delivered ||
-            drone.stepIndex >= movementTokensPerDrone.length
-          ) {
+        for (let droneIndex = 0; droneIndex < droneCount; droneIndex += 1) {
+          const tokenIndex = turn - droneIndex;
+          const token = perDroneTokens[droneIndex][tokenIndex];
+          if (!token) {
             continue;
           }
 
-          const token = movementTokensPerDrone[drone.stepIndex];
-          const fromZone = drone.currentZone;
-          let destinationZone: string | null = null;
-
-          if (token.includes("-")) {
-            const [leftZone, rightZone, ...rest] = token.split("-");
-            if (rest.length > 0 || !leftZone || !rightZone) {
-              continue;
-            }
-
-            if (fromZone === leftZone) {
-              destinationZone = rightZone;
-            } else if (fromZone === rightZone) {
-              destinationZone = leftZone;
-            } else {
-              continue;
-            }
-          } else {
-            destinationZone = token;
-          }
-
-          if (!destinationZone) {
-            continue;
-          }
-
-          const isHold = fromZone === destinationZone;
-          const destinationNode = nodeByName.get(destinationZone);
-          if (!destinationNode) {
-            continue;
-          }
-
-          if (isHold) {
-            if (destinationNode.zone !== "restricted") {
-              continue;
-            }
-          } else {
-            if (destinationNode.zone === "blocked") {
-              continue;
-            }
-
-            const edgeKey = `${fromZone}__${destinationZone}`;
-            const nextEdgeUse = (edgeUseCount.get(edgeKey) ?? 0) + 1;
-            const edgeCap =
-              connectionCapByEdge.get(edgeKey) ?? Number.POSITIVE_INFINITY;
-            if (nextEdgeUse > edgeCap) {
-              continue;
-            }
-
-            const projectedDestOccupancy =
-              getProjectedOccupancy(destinationZone) + 1;
-            if (projectedDestOccupancy > zoneCapacity(destinationZone)) {
-              continue;
-            }
-
-            edgeUseCount.set(edgeKey, nextEdgeUse);
-            leavingCount.set(fromZone, (leavingCount.get(fromZone) ?? 0) + 1);
-            enteringCount.set(
-              destinationZone,
-              (enteringCount.get(destinationZone) ?? 0) + 1,
-            );
-          }
-
-          acceptedMoves.push({
-            droneIndex,
-            token,
-            destinationZone,
-            isHold,
-          });
+          turnTokens.push(`D${droneIndex + 1}-${token}`);
         }
 
-        if (acceptedMoves.length === 0) {
-          break;
-        }
-
-        lines.push(
-          acceptedMoves
-            .map(({ droneIndex, token }) => `D${droneIndex + 1}-${token}`)
-            .join(" "),
-        );
-
-        for (const move of acceptedMoves) {
-          const drone = droneStates[move.droneIndex];
-          drone.stepIndex += 1;
-          if (move.destinationZone === endZoneName) {
-            drone.delivered = true;
-          } else if (!move.isHold) {
-            drone.currentZone = move.destinationZone;
-          }
+        if (turnTokens.length > 0) {
+          lines.push(turnTokens.join(" "));
         }
       }
 
-      const completedCount = droneStates.filter(
-        (drone) => drone.delivered,
-      ).length;
-
-      return {
-        schedule: lines.join("\n"),
-        linesCount: lines.length,
-        completedCount,
-      };
+      return lines.join("\n");
     };
 
-    const estimatePathTurns = (path: string[]) => {
-      let total = 0;
-      for (let i = 1; i < path.length; i += 1) {
-        const zoneType = nodeByName.get(path[i])?.zone;
-        if (zoneType === "blocked") {
-          return Number.POSITIVE_INFINITY;
-        }
-        total += zoneType === "restricted" ? 2 : 1;
-      }
-      return total;
-    };
-
-    const allPaths = findAllPathsBetweenNodes(
+    const primaryPath = findPathBetweenNodes(
       parsed.startHub.name,
       parsed.endHub.name,
       parsed.connections,
-      1200,
     );
 
-    const candidatePaths = (allPaths.length > 0 ? allPaths : [fallbackPath])
-      .filter((path) => path.length >= 2)
-      .sort((a, b) => {
-        const turnDiff = estimatePathTurns(a) - estimatePathTurns(b);
-        if (turnDiff !== 0) {
-          return turnDiff;
-        }
-        return a.length - b.length;
-      })
-      .slice(0, 120);
-
-    let generatedSchedule = "";
-    let bestScore = Number.POSITIVE_INFINITY;
-    let bestCompletedCount = -1;
-
-    for (const path of candidatePaths) {
-      const movementTokensPerDrone = buildMovementTokensForPath(path);
-      if (movementTokensPerDrone.length === 0) {
-        continue;
-      }
-
-      const candidateResult = buildDynamicScheduleForPath(
-        movementTokensPerDrone,
-      );
-      const { schedule, linesCount, completedCount } = candidateResult;
-      if (!schedule) {
-        continue;
-      }
-
-      const validationIssues = validateSimulationAgainstMap(schedule, parsed);
-      const errorCount = validationIssues.filter(
-        (issue) => issue.severity === "error",
-      ).length;
-
-      if (errorCount > 0) {
-        continue;
-      }
-
-      if (
-        completedCount > bestCompletedCount ||
-        (completedCount === bestCompletedCount && linesCount < bestScore)
-      ) {
-        bestCompletedCount = completedCount;
-        bestScore = linesCount;
-        generatedSchedule = schedule;
-      }
-    }
-
-    if (!generatedSchedule) {
-      const fallbackTokens = buildMovementTokensForPath(fallbackPath);
-      if (fallbackTokens.length === 0) {
-        setSimulationInput(
-          "# Unable to generate simulation. No movement tokens generated from path.",
-        );
-        return;
-      }
-
-      generatedSchedule = buildDynamicScheduleForPath(fallbackTokens).schedule;
-    }
-
-    setSimulationInput(generatedSchedule);
-    setIsSimulationRunning(false);
-    setCurrentFrame(0);
-  }
-
-  function handleGenerateBestSimulationCode() {
-    if (!parsed.startHub || !parsed.endHub || !parsed.nbDrones) {
+    if (primaryPath.length < 2) {
       setSimulationInput(
-        "# Unable to generate simulation. Ensure map has nb_drones, start_hub, and end_hub.",
+        "# Unable to generate a valid example for this map.",
       );
+      setIsSimulationRunning(false);
+      setCurrentFrame(0);
+      setFrameProgress(0);
       return;
     }
 
-    const droneCount = parsed.nbDrones;
-    const startZoneName = parsed.startHub.name;
-    const endZoneName = parsed.endHub.name;
-
-    const estimatePathTurns = (path: string[]) => {
-      let total = 0;
-      for (let i = 1; i < path.length; i += 1) {
-        const zoneType = nodeByName.get(path[i])?.zone;
-        if (zoneType === "blocked") {
-          return Number.POSITIVE_INFINITY;
-        }
-        total += zoneType === "restricted" ? 2 : 1;
-      }
-      return total;
-    };
-
-    const comparePaths = (a: string[], b: string[]) => {
-      // Prefer shortest by hops first, then by effective turn cost.
-      const hopDiff = a.length - b.length;
-      if (hopDiff !== 0) {
-        return hopDiff;
-      }
-
-      const turnDiff = estimatePathTurns(a) - estimatePathTurns(b);
-      if (turnDiff !== 0) {
-        return turnDiff;
-      }
-
-      return a.join(",").localeCompare(b.join(","));
-    };
-
-    const serializePath = (path: string[]) => path.join("->");
-
-    const connectionCapByEdge = new Map<string, number>();
-    for (const conn of parsed.connections) {
-      const cap = conn.maxLinkCapacity ?? Number.POSITIVE_INFINITY;
-      connectionCapByEdge.set(`${conn.from}__${conn.to}`, cap);
-      connectionCapByEdge.set(`${conn.to}__${conn.from}`, cap);
-    }
-
-    const zoneCapacity = (zoneName: string) => {
-      if (zoneName === startZoneName || zoneName === endZoneName) {
-        return Number.POSITIVE_INFINITY;
-      }
-
-      const zoneNode = nodeByName.get(zoneName);
-      if (!zoneNode) {
-        return Number.POSITIVE_INFINITY;
-      }
-
-      return (
-        zoneNode.maxDrones ??
-        (zoneNode.zone === "restricted" ? Number.POSITIVE_INFINITY : 1)
-      );
-    };
-
-    const initialPaths = findAllPathsBetweenNodes(
-      startZoneName,
-      endZoneName,
-      parsed.connections,
-      2500,
-    )
-      .filter((path) => path.length >= 2)
-      .sort(comparePaths);
-
-    if (initialPaths.length === 0) {
-      setSimulationInput(
-        "# Unable to generate simulation. No valid path from start_hub to end_hub.",
-      );
-      return;
-    }
-
-    const primaryShortestPath = initialPaths[0];
-
-    const getProjectedOccupancy = (
-      zoneName: string,
-      occupancyBefore: Map<string, number>,
-      leavingCount: Map<string, number>,
-      enteringCount: Map<string, number>,
-    ) => {
-      const before = occupancyBefore.get(zoneName) ?? 0;
-      const leaving = leavingCount.get(zoneName) ?? 0;
-      const entering = enteringCount.get(zoneName) ?? 0;
-      return before - leaving + entering;
-    };
-
-    const pathCache = new Map<string, string[][]>();
-    const getCandidatePathsFrom = (zoneName: string) => {
-      if (pathCache.has(zoneName)) {
-        return pathCache.get(zoneName)!;
-      }
-
-      const candidates: string[][] = [];
-      const seen = new Set<string>();
-
-      // Reuse start->end paths by taking suffixes from the current zone.
-      for (const path of initialPaths) {
-        const indexInPath = path.indexOf(zoneName);
-        if (indexInPath < 0 || indexInPath >= path.length - 1) {
-          continue;
-        }
-
-        const suffix = path.slice(indexInPath);
-        const key = serializePath(suffix);
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        candidates.push(suffix);
-      }
-
-      // Add local alternatives to support rerouting when the primary path stalls.
-      const discoveredPaths = findAllPathsBetweenNodes(
-        zoneName,
-        endZoneName,
-        parsed.connections,
-        800,
-      ).filter((path) => path.length >= 2);
-
-      for (const path of discoveredPaths) {
-        const key = serializePath(path);
-        if (seen.has(key)) {
-          continue;
-        }
-
-        seen.add(key);
-        candidates.push(path);
-      }
-
-      const rankedPaths = candidates.sort(comparePaths).slice(0, 2);
-
-      // Keep drones on the globally shortest path whenever possible.
-      const zoneIndexOnPrimary = primaryShortestPath.indexOf(zoneName);
-      if (zoneIndexOnPrimary >= 0) {
-        const suffix = primaryShortestPath.slice(zoneIndexOnPrimary);
-        const suffixIdx = rankedPaths.findIndex(
-          (path) => path.join(",") === suffix.join(","),
-        );
-
-        if (suffixIdx > 0) {
-          const [preferred] = rankedPaths.splice(suffixIdx, 1);
-          rankedPaths.unshift(preferred);
-        }
-      }
-
-      pathCache.set(zoneName, rankedPaths);
-      return rankedPaths;
-    };
-
-    const lines: string[] = [];
-    const droneStates = Array.from({ length: droneCount }, (_, idx) => ({
-      droneId: `D${idx + 1}`,
-      currentZone: startZoneName,
-      delivered: false,
-      restrictedHoldTurns: 0,
-      preferredPath: primaryShortestPath,
-    }));
-
-    const maxTurns = Math.max(
-      120,
-      parsed.hubs.length * Math.max(4, droneCount) + 300,
-    );
-    let stalledTurns = 0;
-
-    for (let turn = 0; turn < maxTurns; turn += 1) {
-      if (droneStates.every((drone) => drone.delivered)) {
-        break;
-      }
-
-      const occupancyBefore = new Map<string, number>();
-      droneStates.forEach((drone) => {
-        if (!drone.delivered) {
-          occupancyBefore.set(
-            drone.currentZone,
-            (occupancyBefore.get(drone.currentZone) ?? 0) + 1,
-          );
-        }
-      });
-
-      const edgeUseCount = new Map<string, number>();
-      const leavingCount = new Map<string, number>();
-      const enteringCount = new Map<string, number>();
-      const restrictedZonesWithMaxDrone1Entered = new Set<string>();
-      const acceptedMoves: Array<{
-        droneIndex: number;
-        token: string;
-        destinationZone: string;
-        isHold: boolean;
-        entersRestricted: boolean;
-      }> = [];
-
-      for (
-        let droneIndex = 0;
-        droneIndex < droneStates.length;
-        droneIndex += 1
-      ) {
-        const drone = droneStates[droneIndex];
-        if (drone.delivered) {
-          continue;
-        }
-
-        if (drone.currentZone === endZoneName) {
-          drone.delivered = true;
-          continue;
-        }
-
-        if (drone.restrictedHoldTurns > 0) {
-          acceptedMoves.push({
-            droneIndex,
-            token: drone.currentZone,
-            destinationZone: drone.currentZone,
-            isHold: true,
-            entersRestricted: false,
-          });
-          continue;
-        }
-
-        const fromZone = drone.currentZone;
-        const candidatePaths = getCandidatePathsFrom(fromZone);
-        if (candidatePaths.length === 0) {
-          continue;
-        }
-
-        const preferredCandidates: string[][] = [];
-        const alternateCandidates: string[][] = [];
-
-        const preferredFromCurrent =
-          drone.preferredPath[0] === fromZone
-            ? drone.preferredPath
-            : (() => {
-                const idx = drone.preferredPath.indexOf(fromZone);
-                return idx >= 0 ? drone.preferredPath.slice(idx) : null;
-              })();
-
-        if (preferredFromCurrent && preferredFromCurrent.length >= 2) {
-          preferredCandidates.push(preferredFromCurrent);
-        }
-
-        // Check if preferred path will conflict with other drones at restricted zones.
-        let preferredPathHasConflict = false;
-        if (preferredFromCurrent && preferredFromCurrent.length >= 2) {
-          for (let i = 1; i < preferredFromCurrent.length; i++) {
-            const zoneInPath = preferredFromCurrent[i];
-            const nodeInPath = nodeByName.get(zoneInPath);
-            if (
-              nodeInPath &&
-              nodeInPath.zone === "restricted" &&
-              (nodeInPath.maxDrones ?? Number.POSITIVE_INFINITY) === 1
-            ) {
-              // Check if another drone (not yet delivered) also has this zone in their preferred path.
-              const otherDroneCount = droneStates.filter(
-                (d) =>
-                  !d.delivered &&
-                  d !== drone &&
-                  d.preferredPath.includes(zoneInPath),
-              ).length;
-
-              if (otherDroneCount > 0) {
-                preferredPathHasConflict = true;
-                break;
-              }
-            }
-          }
-        }
-
-        for (const path of candidatePaths) {
-          if (path[0] !== fromZone || path.length < 2) {
-            continue;
-          }
-
-          const duplicatePreferred = preferredCandidates.some(
-            (candidate) => serializePath(candidate) === serializePath(path),
-          );
-
-          if (!duplicatePreferred) {
-            alternateCandidates.push(path);
-          }
-        }
-
-        // If preferred path has a conflict, prioritize alternate that avoids it.
-        if (preferredPathHasConflict && alternateCandidates.length > 0) {
-          const alternatesWithoutConflict = alternateCandidates.filter(
-            (altPath) => {
-              for (let i = 1; i < altPath.length; i++) {
-                const zoneInPath = altPath[i];
-                const nodeInPath = nodeByName.get(zoneInPath);
-                if (
-                  nodeInPath &&
-                  nodeInPath.zone === "restricted" &&
-                  (nodeInPath.maxDrones ?? Number.POSITIVE_INFINITY) === 1
-                ) {
-                  const otherDroneCount = droneStates.filter(
-                    (d) =>
-                      !d.delivered &&
-                      d !== drone &&
-                      d.preferredPath.includes(zoneInPath),
-                  ).length;
-
-                  if (otherDroneCount > 0) {
-                    return false; // This alternate also has a conflict.
-                  }
-                }
-              }
-              return true;
-            },
-          );
-
-          if (alternatesWithoutConflict.length > 0) {
-            alternateCandidates.unshift(...alternatesWithoutConflict);
-            preferredCandidates.length = 0; // Skip preferred; use conflict-free alternate.
-          }
-        }
-
-        let moveFound = false;
-        let usedAlternate = false;
-
-        // Check if preferred path's first destination is a restricted zone with maxDrones=1 that will be occupied.
-        let shouldSkipPreferred = false;
-        if (preferredCandidates.length > 0) {
-          const preferredDest = preferredCandidates[0][1];
-          const preferredNode = nodeByName.get(preferredDest);
-          if (
-            preferredNode &&
-            preferredNode.zone === "restricted" &&
-            (preferredNode.maxDrones ?? Number.POSITIVE_INFINITY) === 1 &&
-            restrictedZonesWithMaxDrone1Entered.has(preferredDest)
-          ) {
-            shouldSkipPreferred = true;
-          }
-        }
-
-        // First: try only the preferred path (if not blocked by lookahead).
-        if (!shouldSkipPreferred) {
-          for (const path of preferredCandidates) {
-            const destinationZone = path[1];
-            if (!destinationZone) {
-              continue;
-            }
-
-            const destinationNode = nodeByName.get(destinationZone);
-            if (!destinationNode || destinationNode.zone === "blocked") {
-              continue;
-            }
-
-            // Skip restricted zones with maxDrones=1 if one drone is already entering.
-            if (
-              destinationNode.zone === "restricted" &&
-              (destinationNode.maxDrones ?? Number.POSITIVE_INFINITY) === 1 &&
-              restrictedZonesWithMaxDrone1Entered.has(destinationZone)
-            ) {
-              continue;
-            }
-
-            const edgeKey = `${fromZone}__${destinationZone}`;
-            const nextEdgeUse = (edgeUseCount.get(edgeKey) ?? 0) + 1;
-            const edgeCap =
-              connectionCapByEdge.get(edgeKey) ?? Number.POSITIVE_INFINITY;
-            if (nextEdgeUse > edgeCap) {
-              continue;
-            }
-
-            const projectedDestOccupancy =
-              getProjectedOccupancy(
-                destinationZone,
-                occupancyBefore,
-                leavingCount,
-                enteringCount,
-              ) + 1;
-
-            if (projectedDestOccupancy > zoneCapacity(destinationZone)) {
-              continue;
-            }
-
-            edgeUseCount.set(edgeKey, nextEdgeUse);
-            leavingCount.set(fromZone, (leavingCount.get(fromZone) ?? 0) + 1);
-            enteringCount.set(
-              destinationZone,
-              (enteringCount.get(destinationZone) ?? 0) + 1,
-            );
-
-            acceptedMoves.push({
-              droneIndex,
-              token: `${fromZone}-${destinationZone}`,
-              destinationZone,
-              isHold: false,
-              entersRestricted: destinationNode.zone === "restricted",
-            });
-
-            // Track if this is a restricted zone with maxDrones=1.
-            if (
-              destinationNode.zone === "restricted" &&
-              (destinationNode.maxDrones ?? Number.POSITIVE_INFINITY) === 1
-            ) {
-              restrictedZonesWithMaxDrone1Entered.add(destinationZone);
-            }
-
-            moveFound = true;
-            break;
-          }
-        }
-
-        // Second: if preferred path is blocked or will be blocked, try alternate paths.
-        if (!moveFound) {
-          for (const path of alternateCandidates) {
-            const destinationZone = path[1];
-            if (!destinationZone) {
-              continue;
-            }
-
-            const destinationNode = nodeByName.get(destinationZone);
-            if (!destinationNode || destinationNode.zone === "blocked") {
-              continue;
-            }
-
-            const edgeKey = `${fromZone}__${destinationZone}`;
-            const nextEdgeUse = (edgeUseCount.get(edgeKey) ?? 0) + 1;
-            const edgeCap =
-              connectionCapByEdge.get(edgeKey) ?? Number.POSITIVE_INFINITY;
-            if (nextEdgeUse > edgeCap) {
-              continue;
-            }
-
-            const projectedDestOccupancy =
-              getProjectedOccupancy(
-                destinationZone,
-                occupancyBefore,
-                leavingCount,
-                enteringCount,
-              ) + 1;
-
-            if (projectedDestOccupancy > zoneCapacity(destinationZone)) {
-              continue;
-            }
-
-            edgeUseCount.set(edgeKey, nextEdgeUse);
-            leavingCount.set(fromZone, (leavingCount.get(fromZone) ?? 0) + 1);
-            enteringCount.set(
-              destinationZone,
-              (enteringCount.get(destinationZone) ?? 0) + 1,
-            );
-
-            acceptedMoves.push({
-              droneIndex,
-              token: `${fromZone}-${destinationZone}`,
-              destinationZone,
-              isHold: false,
-              entersRestricted: destinationNode.zone === "restricted",
-            });
-
-            // Track if this is a restricted zone with maxDrones=1.
-            if (
-              destinationNode.zone === "restricted" &&
-              (destinationNode.maxDrones ?? Number.POSITIVE_INFINITY) === 1
-            ) {
-              restrictedZonesWithMaxDrone1Entered.add(destinationZone);
-            }
-
-            // Only switch path when an alternate was actually used.
-            drone.preferredPath = path;
-            usedAlternate = true;
-            moveFound = true;
-            break;
-          }
-        }
-
-        if (!moveFound) {
-          // This drone is blocked on current shortest route(s) this turn.
-          // It will retry next turn and can switch routes when one opens.
-          continue;
-        }
-      }
-
-      if (acceptedMoves.length === 0) {
-        stalledTurns += 1;
-        if (stalledTurns > 8) {
-          break;
-        }
-        continue;
-      }
-
-      stalledTurns = 0;
-
-      lines.push(
-        acceptedMoves
-          .map(({ droneIndex, token }) => `D${droneIndex + 1}-${token}`)
-          .join(" "),
-      );
-
-      for (const move of acceptedMoves) {
-        const drone = droneStates[move.droneIndex];
-
-        if (move.isHold) {
-          drone.restrictedHoldTurns = Math.max(
-            0,
-            drone.restrictedHoldTurns - 1,
-          );
-          continue;
-        }
-
-        drone.currentZone = move.destinationZone;
-
-        if (move.destinationZone === endZoneName) {
-          drone.delivered = true;
-          drone.restrictedHoldTurns = 0;
-        } else {
-          drone.restrictedHoldTurns = move.entersRestricted ? 1 : 0;
-        }
-
-        const preferred = drone.preferredPath;
-        if (preferred[0] !== drone.currentZone) {
-          const indexOnPreferred = preferred.indexOf(drone.currentZone);
-          if (indexOnPreferred >= 0) {
-            drone.preferredPath = preferred.slice(indexOnPreferred);
-          }
-        }
-      }
-    }
-
-    const generatedSchedule = lines.join("\n");
-
-    if (!generatedSchedule) {
-      setSimulationInput(
-        "# Unable to generate a valid simulation for this map with current constraints.",
-      );
-      return;
-    }
-
-    const errorCount = validateSimulationAgainstMap(
+    const generatedSchedule = buildStaggeredSchedule(primaryPath);
+    const validationIssues = validateSimulationAgainstMap(
       generatedSchedule,
       parsed,
-    ).filter((issue) => issue.severity === "error").length;
+    );
+    const hasErrors = validationIssues.some(
+      (issue) => issue.severity === "error",
+    );
 
-    if (errorCount > 0) {
+    if (!generatedSchedule || hasErrors) {
       setSimulationInput(
-        "# Unable to generate a fully valid best simulation with current constraints.",
+        "# Unable to generate a valid example for this map. Please use Get best simulation.",
       );
+      setIsSimulationRunning(false);
+      setCurrentFrame(0);
+      setFrameProgress(0);
       return;
     }
 
     setSimulationInput(generatedSchedule);
     setIsSimulationRunning(false);
     setCurrentFrame(0);
+    setFrameProgress(0);
   }
 
   function handleFrameChange(frame: number) {
     setIsSimulationRunning(false);
     setFrameProgress(0);
+    lastFrameTimeRef.current = 0;
     setCurrentFrame(
       Math.max(0, Math.min(frame, Math.max(0, maxSimulationFrames - 1))),
     );
@@ -2291,13 +1515,6 @@ export default function DroneMapVisualizer() {
                 className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
               >
                 Get example for simulation code
-              </button>
-              <button
-                type="button"
-                onClick={handleGenerateBestSimulationCode}
-                className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-400/20"
-              >
-                Get best simulation
               </button>
               <button
                 type="button"
@@ -2895,8 +2112,6 @@ export default function DroneMapVisualizer() {
                       onDrawingMove={handleDrawingMove}
                       onDrawingEnd={handleDrawingEnd}
                       dronePositions={computedDronePositions}
-                      selectedDrone={selectedDrone}
-                      onDroneClick={handleDroneClick}
                     />
 
                     {!hasRenderableMap && (
@@ -2925,18 +2140,7 @@ export default function DroneMapVisualizer() {
               </div>
 
               <div className={`space-y-4 ${isFullscreen ? "hidden" : ""}`}>
-                {selectedZoneForDetails &&
-                (() => {
-                  const zoneNode =
-                    parsed.startHub?.name === selectedZoneForDetails
-                      ? parsed.startHub
-                      : parsed.endHub?.name === selectedZoneForDetails
-                        ? parsed.endHub
-                        : parsed.hubs.find(
-                            (hub) => hub.name === selectedZoneForDetails,
-                          );
-                  return !!zoneNode;
-                })() ? (
+                {selectedZoneForDetails && selectedZoneDroneInfo.zoneNode ? (
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -2954,7 +2158,7 @@ export default function DroneMapVisualizer() {
                       <button
                         onClick={() => {
                           setSelectedZoneForDetails(null);
-                          setSelectedDrone(null);
+                          setSelectedZone(null);
                         }}
                         className="text-slate-400 hover:text-slate-200 text-lg leading-none"
                         title="Close"
@@ -2964,14 +2168,7 @@ export default function DroneMapVisualizer() {
                     </div>
                     <dl className="space-y-3 text-sm">
                       {(() => {
-                        const zoneNode =
-                          parsed.startHub?.name === selectedZoneForDetails
-                            ? parsed.startHub
-                            : parsed.endHub?.name === selectedZoneForDetails
-                              ? parsed.endHub
-                              : parsed.hubs.find(
-                                  (hub) => hub.name === selectedZoneForDetails,
-                                );
+                        const zoneNode = selectedZoneDroneInfo.zoneNode;
                         if (!zoneNode) return null;
                         return (
                           <>
@@ -3017,6 +2214,22 @@ export default function DroneMapVisualizer() {
                                 </dd>
                               </div>
                             )}
+                            <div>
+                              <dt className="text-slate-400">Drones Inside</dt>
+                              <dd className="text-cyan-100 font-medium">
+                                {selectedZoneDroneInfo.dronesInZone.length}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-slate-400">Drone IDs</dt>
+                              <dd className="text-cyan-100 font-medium break-words">
+                                {selectedZoneDroneInfo.dronesInZone.length > 0
+                                  ? selectedZoneDroneInfo.dronesInZone.join(
+                                      ", ",
+                                    )
+                                  : "None"}
+                              </dd>
+                            </div>
                           </>
                         );
                       })()}
@@ -3024,79 +2237,6 @@ export default function DroneMapVisualizer() {
                   </motion.div>
                 ) : (
                   <LegendCard />
-                )}
-                {selectedDrone && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-3xl border border-green-400/30 bg-slate-900/80 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div>
-                        <h3 className="font-semibold text-white">
-                          {selectedDrone}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Drone Information
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSelectedDrone(null);
-                          setSelectedZoneForDetails(null);
-                        }}
-                        className="text-slate-400 hover:text-slate-200 text-lg leading-none"
-                        title="Close"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <dl className="space-y-3 text-sm">
-                      {(() => {
-                        const droneInfo = computedDronePositions.find(
-                          (d) => d.droneId === selectedDrone,
-                        );
-                        const currentZoneName = droneInfo
-                          ? (() => {
-                              const node = Array.from(nodeByName.values()).find(
-                                (n) =>
-                                  Math.abs(n.x - droneInfo.x) < 0.1 &&
-                                  Math.abs(n.y - droneInfo.y) < 0.1,
-                              );
-                              return node?.name || "Unknown";
-                            })()
-                          : "Unknown";
-
-                        return (
-                          <>
-                            <div>
-                              <dt className="text-slate-400">Current Zone</dt>
-                              <dd className="text-green-100 font-medium">
-                                {currentZoneName}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-slate-400">Status</dt>
-                              <dd className="text-green-100 font-medium capitalize">
-                                {droneInfo?.completed
-                                  ? "Delivered"
-                                  : "In Transit"}
-                              </dd>
-                            </div>
-                            {droneInfo && (
-                              <div>
-                                <dt className="text-slate-400">Position</dt>
-                                <dd className="text-green-100 font-medium">
-                                  ({droneInfo.x.toFixed(2)},{" "}
-                                  {droneInfo.y.toFixed(2)})
-                                </dd>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </dl>
-                  </motion.div>
                 )}
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
