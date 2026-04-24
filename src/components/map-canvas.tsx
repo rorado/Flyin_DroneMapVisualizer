@@ -55,6 +55,9 @@ export type MapCanvasProps = {
     progress: number;
     completed: boolean;
   }>;
+  selectedDrone?: string | null;
+  onDroneClick?: (droneId: string) => void;
+  onMapClick?: () => void;
 };
 
 export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
@@ -90,6 +93,9 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
       onDrawingMove,
       onDrawingEnd,
       dronePositions,
+      selectedDrone,
+      onDroneClick,
+      onMapClick,
     },
     ref,
   ) {
@@ -157,6 +163,11 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
         onPointerUp={isDrawingMode ? onDrawingEnd : onMapPointerEnd}
         onPointerCancel={isDrawingMode ? onDrawingEnd : onMapPointerEnd}
         onPointerLeave={isDrawingMode ? onDrawingEnd : onMapPointerEnd}
+        onClick={(e) => {
+          if (onMapClick && e.target === e.currentTarget) {
+            onMapClick();
+          }
+        }}
       >
         <defs>
           <pattern id="grid" width="1" height="1" patternUnits="userSpaceOnUse">
@@ -659,7 +670,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
           <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {dronePositions.map((drone) => {
               const droneIndex = parseInt(drone.droneId.substring(1));
-              const droneScale = 3;
+              const droneScale = 1.6;
               const colors = [
                 "#3b82f6", // blue
                 "#10b981", // emerald
@@ -693,6 +704,13 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(
                     fill={color}
                     stroke="#ffffff"
                     strokeWidth={0.06 * droneScale}
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onDroneClick) {
+                        onDroneClick(drone.droneId);
+                      }
+                    }}
                     filter={
                       drone.completed
                         ? "drop-shadow(0 0 0.4px rgba(16, 185, 129, 1)) drop-shadow(0 0 0.8px rgba(16, 185, 129, 0.6))"

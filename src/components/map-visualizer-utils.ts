@@ -233,13 +233,13 @@ export function getNodeRadius(node: ParsedNode) {
 
   switch (node.zone) {
     case "priority":
-      return 0.56;
+      return 1;
     case "restricted":
-      return 0.75;
+      return 1.2;
     case "blocked":
-      return 0.95;
+      return 1.3;
     default:
-      return 0.48;
+      return 0.9;
   }
 }
 
