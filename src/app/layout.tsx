@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   metadataBase: new URL("http://localhost:3000"),
@@ -20,7 +21,9 @@ export const metadata: Metadata = {
     "TypeScript",
     "SVG",
   ],
-  authors: [{ name: "sohrich", url: "https://profile-v3.intra.42.fr/users/soahrich" }],
+  authors: [
+    { name: "sohrich", url: "https://profile-v3.intra.42.fr/users/soahrich" },
+  ],
   creator: "sohrich",
   publisher: "42 Network",
   category: "education",
@@ -52,7 +55,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
