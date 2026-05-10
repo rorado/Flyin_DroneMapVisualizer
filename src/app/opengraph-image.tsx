@@ -54,7 +54,7 @@ export default function Image() {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "20px", alignItems: "end" }}>
+      <div style={{ display: "flex", gap: "20px", alignItems: "flex-end" }}>
         <div
           style={{
             flex: 1,
