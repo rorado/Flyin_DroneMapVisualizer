@@ -221,26 +221,131 @@ export default function DroneMapVisualizer() {
     return map;
   }, [nodes]);
 
+  type VisualMovementStep = {
+    turn: number;
+    fromZoneName: string;
+    toZoneName: string;
+    fromPoint: { x: number; y: number };
+    toPoint: { x: number; y: number };
+    phase: "normal" | "approach" | "enter";
+  };
+
+  const getNodePoint = (zoneName: string) => {
+    const node = nodeByName.get(zoneName);
+    return node ? { x: node.x, y: node.y } : null;
+  };
+
+  const getConnectionTransitPoint = (
+    fromZoneName: string,
+    toZoneName: string,
+  ) => {
+    const fromPoint = getNodePoint(fromZoneName);
+    const toPoint = getNodePoint(toZoneName);
+
+    if (!fromPoint && !toPoint) {
+      return { x: 0, y: 0 };
+    }
+
+    if (!fromPoint) {
+      return toPoint ?? { x: 0, y: 0 };
+    }
+
+    if (!toPoint) {
+      return fromPoint;
+    }
+
+    return {
+      x: (fromPoint.x + toPoint.x) / 2,
+      y: (fromPoint.y + toPoint.y) / 2,
+    };
+  };
+
+  const buildVisualSteps = (
+    movement: (typeof appliedParsedSimulation.movements)[number],
+  ) => {
+    const startHubName = parsed.startHub?.name;
+    if (!startHubName) {
+      return [] as VisualMovementStep[];
+    }
+
+    const steps: VisualMovementStep[] = [];
+    const turns = movement.turns ?? movement.path.map((_, idx) => idx + 1);
+    let visualTurnOffset = 0;
+    let currentZoneName = startHubName;
+    let currentPoint = getNodePoint(startHubName) ?? { x: 0, y: 0 };
+
+    for (let i = 0; i < movement.path.length; i += 1) {
+      const destinationZoneName = movement.path[i];
+      const destinationNode = nodeByName.get(destinationZoneName);
+
+      if (!destinationNode) {
+        continue;
+      }
+
+      const rawTurn = turns[i] ?? i + 1;
+      const visualTurn = rawTurn + visualTurnOffset;
+      const destinationPoint = { x: destinationNode.x, y: destinationNode.y };
+
+      if (destinationNode.zone === "restricted") {
+        const transitPoint = getConnectionTransitPoint(
+          currentZoneName,
+          destinationZoneName,
+        );
+
+        steps.push({
+          turn: visualTurn,
+          fromZoneName: currentZoneName,
+          toZoneName: destinationZoneName,
+          fromPoint: currentPoint,
+          toPoint: transitPoint,
+          phase: "approach",
+        });
+
+        steps.push({
+          turn: visualTurn + 1,
+          fromZoneName: currentZoneName,
+          toZoneName: destinationZoneName,
+          fromPoint: transitPoint,
+          toPoint: destinationPoint,
+          phase: "enter",
+        });
+
+        if (movement.path[i + 1] === destinationZoneName) {
+          i += 1;
+        } else {
+          visualTurnOffset += 1;
+        }
+      } else {
+        steps.push({
+          turn: visualTurn,
+          fromZoneName: currentZoneName,
+          toZoneName: destinationZoneName,
+          fromPoint: currentPoint,
+          toPoint: destinationPoint,
+          phase: "normal",
+        });
+      }
+
+      currentZoneName = destinationZoneName;
+      currentPoint = destinationPoint;
+    }
+
+    return steps;
+  };
+
   const maxTurns = useMemo(() => {
     let overallFinishTurn = 0;
 
     appliedParsedSimulation.movements.forEach((movement) => {
-      const turns = movement.turns ?? movement.path.map((_, idx) => idx + 1);
-      let droneFinishTurn = 0;
+      const visualSteps = buildVisualSteps(movement);
 
-      movement.path.forEach((zoneName, index) => {
-        const moveTurn = turns[index] ?? index + 1;
-        const zoneType = nodeByName.get(zoneName)?.zone;
-        const moveCost = zoneType === "restricted" ? 2 : 1;
-        const arrivalTurn = moveTurn + moveCost - 1;
-        droneFinishTurn = Math.max(droneFinishTurn, arrivalTurn);
+      visualSteps.forEach((step) => {
+        overallFinishTurn = Math.max(overallFinishTurn, step.turn);
       });
-
-      overallFinishTurn = Math.max(overallFinishTurn, droneFinishTurn);
     });
 
     return overallFinishTurn;
-  }, [appliedParsedSimulation.movements, nodeByName]);
+  }, [appliedParsedSimulation.movements, buildVisualSteps]);
 
   const currentTurn = useMemo(() => {
     return Math.min(currentFrame, maxTurns);
@@ -254,6 +359,11 @@ export default function DroneMapVisualizer() {
     // Frame 0 is initial state, then one frame per turn.
     return maxTurns + 1;
   }, [appliedParsedSimulation.movements.length, maxTurns]);
+
+  const canToggleSimulation =
+    maxSimulationFrames > 0 &&
+    appliedParsedSimulation.movements.length > 0 &&
+    !appliedSimulationIssues.some((issue) => issue.severity === "error");
 
   const computedDronePositions = useMemo(() => {
     if (
@@ -269,35 +379,20 @@ export default function DroneMapVisualizer() {
     const endHubName = parsed.endHub.name;
 
     return appliedParsedSimulation.movements.map((movement, droneIdx) => {
-      const pathLength = movement.path.length;
-      const turns = movement.turns ?? movement.path.map((_, idx) => idx + 1);
+      const visualSteps = buildVisualSteps(movement);
       const evaluatedTurn = isSimulationRunning
         ? currentFrame + 1
         : currentFrame;
       const turnProgress = isSimulationRunning ? frameProgress : 0;
+      const startPoint = getNodePoint(startHubName) ?? { x: 0, y: 0 };
 
-      if (pathLength === 0) {
-        const startZone = nodeByName.get(startHubName);
-        if (!startZone) {
-          return {
-            droneId: movement.droneId,
-            x: 0,
-            y: 0,
-            nextX: 0,
-            nextY: 0,
-            progress: 0,
-            completed: false,
-            currentZoneName: startHubName,
-            nextZoneName: startHubName,
-          };
-        }
-
+      if (visualSteps.length === 0) {
         return {
           droneId: movement.droneId,
-          x: startZone.x,
-          y: startZone.y,
-          nextX: startZone.x,
-          nextY: startZone.y,
+          x: startPoint.x,
+          y: startPoint.y,
+          nextX: startPoint.x,
+          nextY: startPoint.y,
           progress: 0,
           completed: false,
           currentZoneName: startHubName,
@@ -307,44 +402,33 @@ export default function DroneMapVisualizer() {
 
       let currentZoneName = startHubName;
       let nextZoneName = startHubName;
+      let currentPoint = startPoint;
+      let nextPoint = startPoint;
       let progress = 0;
 
-      for (let i = 0; i < pathLength; i += 1) {
-        const moveTurn = turns[i] ?? i + 1;
-        const destinationZoneName = movement.path[i];
-
-        if (moveTurn > evaluatedTurn) {
+      for (const step of visualSteps) {
+        if (step.turn > evaluatedTurn) {
           break;
         }
 
-        if (isSimulationRunning && moveTurn === evaluatedTurn) {
-          currentZoneName =
-            i === 0 ? startHubName : (movement.path[i - 1] ?? startHubName);
-          nextZoneName = destinationZoneName;
+        if (isSimulationRunning && step.turn === evaluatedTurn) {
+          currentZoneName = step.fromZoneName;
+          nextZoneName =
+            step.phase === "normal" ? step.toZoneName : step.fromZoneName;
+          currentPoint = step.fromPoint;
+          nextPoint = step.toPoint;
           progress = turnProgress;
           break;
         }
 
-        currentZoneName = destinationZoneName;
-        nextZoneName = destinationZoneName;
+        currentZoneName =
+          step.phase === "normal" || step.phase === "enter"
+            ? step.toZoneName
+            : step.fromZoneName;
+        nextZoneName = currentZoneName;
+        currentPoint = step.toPoint;
+        nextPoint = step.toPoint;
         progress = 0;
-      }
-
-      const currentZone = nodeByName.get(currentZoneName);
-      const nextZone = nodeByName.get(nextZoneName);
-
-      if (!currentZone || !nextZone) {
-        return {
-          droneId: movement.droneId,
-          x: 0,
-          y: 0,
-          nextX: 0,
-          nextY: 0,
-          progress: 0,
-          completed: false,
-          currentZoneName,
-          nextZoneName,
-        };
       }
 
       const completed =
@@ -354,10 +438,10 @@ export default function DroneMapVisualizer() {
 
       return {
         droneId: movement.droneId,
-        x: currentZone.x,
-        y: currentZone.y,
-        nextX: nextZone.x,
-        nextY: nextZone.y,
+        x: currentPoint.x,
+        y: currentPoint.y,
+        nextX: nextPoint.x,
+        nextY: nextPoint.y,
         progress,
         completed,
         currentZoneName,
@@ -373,6 +457,7 @@ export default function DroneMapVisualizer() {
     frameProgress,
     isSimulationRunning,
     nodeByName,
+    buildVisualSteps,
   ]);
 
   const selectedZoneDroneInfo = useMemo(() => {
@@ -1331,9 +1416,7 @@ export default function DroneMapVisualizer() {
     );
 
     if (primaryPath.length < 2) {
-      setSimulationInput(
-        "# Unable to generate a valid example for this map.",
-      );
+      setSimulationInput("# Unable to generate a valid example for this map.");
       setIsSimulationRunning(false);
       setCurrentFrame(0);
       setFrameProgress(0);
@@ -1948,6 +2031,21 @@ export default function DroneMapVisualizer() {
                   className="rounded-2xl border border-green-400/30 bg-green-400/10 px-4 py-2 text-sm font-semibold text-green-100 transition hover:bg-green-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Move Next →
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePlayPauseSimulation}
+                  disabled={!canToggleSimulation}
+                  className={`rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isSimulationRunning
+                      ? "border border-amber-400/30 bg-amber-400/10 text-amber-100 hover:bg-amber-400/20"
+                      : "border border-cyan-400/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
+                  }`}
+                >
+                  {isSimulationRunning
+                    ? "⏹ Stop simulation"
+                    : "▶ Play simulation"}
                 </button>
 
                 {/* Drawing Tools */}
